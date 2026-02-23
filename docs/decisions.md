@@ -23,3 +23,9 @@
 - Context: Native Microsoft Word cannot run in this Ubuntu workspace, but Word round-trip confidence is still required.
 - Decision: Automate Linux integrity/render checks and treat Word desktop spot-check as explicit manual gate for release-critical documents.
 - Consequences: CI remains Linux-native; final high-risk sign-off still requires human Word validation.
+
+## 2026-02-23 - ADR-005: Localized run-level revisions for replace_text_once
+- Status: accepted
+- Context: Paragraph-rewrite tracked edits caused whole-sentence redlines for single-word changes, reducing review fidelity.
+- Decision: For `replace_text_once`, attempt localized run-level split first and emit word-level `w:del`/`w:ins` when match is contained in a safe run shape. Fall back to paragraph rewrite only when localized split is unsafe/unsupported.
+- Consequences: Common single-word corrections now produce precise revisions in Word; complex multi-run cases still degrade to paragraph-level rewrites until richer run-diff logic is implemented.

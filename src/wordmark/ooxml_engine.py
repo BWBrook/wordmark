@@ -136,10 +136,122 @@ def _ensure_comments_infrastructure(pkg: DocxPackage) -> etree._Element:
 def _build_run_with_text(text: str, tag: str = "t") -> etree._Element:
     run = etree.Element(_w("r"))
     text_el = etree.SubElement(run, _w(tag))
+    _set_text_node(text_el, text)
+    return run
+
+
+def _set_text_node(text_el: etree._Element, text: str) -> None:
     if text != text.strip():
         text_el.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    else:
+        text_el.attrib.pop("{http://www.w3.org/XML/1998/namespace}space", None)
     text_el.text = text
+
+
+def _build_run_like(template_run: etree._Element, text: str, *, tag: str = "t") -> etree._Element:
+    """Create a run preserving run-level styling from the template run."""
+    run = etree.Element(_w("r"), attrib=dict(template_run.attrib))
+    rpr = template_run.find(_w("rPr"))
+    if rpr is not None:
+        run.append(deepcopy(rpr))
+    text_el = etree.SubElement(run, _w(tag))
+    _set_text_node(text_el, text)
     return run
+
+
+def _run_text_node_and_extras(run: etree._Element) -> tuple[etree._Element, list[etree._Element]] | None:
+    """Return one text node and non-(rPr/t) children that need preservation."""
+    text_nodes = run.findall(_w("t"))
+    if len(text_nodes) != 1:
+        return None
+    extras = [child for child in list(run) if child.tag not in {_w("rPr"), _w("t")}]
+    return text_nodes[0], extras
+
+
+def _replace_text_once_localized(
+    paragraph: etree._Element,
+    *,
+    find_text: str,
+    replacement: str,
+    track_changes: bool,
+    author: str,
+    revision_id: int,
+    timestamp: str,
+) -> dict[str, Any] | None:
+    """Try run-level localized replace. Returns None when unsupported."""
+    for run in paragraph.findall(_w("r")):
+        info = _run_text_node_and_extras(run)
+        if info is None:
+            continue
+        text_node, extras = info
+        current_text = text_node.text or ""
+        offset = current_text.find(find_text)
+        if offset < 0:
+            continue
+
+        prefix = current_text[:offset]
+        matched = current_text[offset : offset + len(find_text)]
+        suffix = current_text[offset + len(find_text) :]
+
+        parent = run.getparent()
+        if parent is None:
+            continue
+        if extras and not prefix:
+            # Keep fallback behavior when non-text run children would be dropped.
+            continue
+        idx = parent.index(run)
+        parent.remove(run)
+
+        if track_changes:
+            if prefix:
+                if extras:
+                    prefix_run = deepcopy(run)
+                    prefix_text = prefix_run.find(_w("t"))
+                    if prefix_text is None:
+                        return None
+                    _set_text_node(prefix_text, prefix)
+                    parent.insert(idx, prefix_run)
+                else:
+                    parent.insert(idx, _build_run_like(run, prefix, tag="t"))
+                idx += 1
+
+            deleted = etree.Element(_w("del"))
+            deleted.set(_w_attr("id"), str(revision_id))
+            deleted.set(_w_attr("author"), author)
+            deleted.set(_w_attr("date"), timestamp)
+            deleted.append(_build_run_like(run, matched, tag="delText"))
+            parent.insert(idx, deleted)
+            idx += 1
+
+            inserted = etree.Element(_w("ins"))
+            inserted.set(_w_attr("id"), str(revision_id + 1))
+            inserted.set(_w_attr("author"), author)
+            inserted.set(_w_attr("date"), timestamp)
+            inserted.append(_build_run_like(run, replacement, tag="t"))
+            parent.insert(idx, inserted)
+            idx += 1
+
+            if suffix:
+                parent.insert(idx, _build_run_like(run, suffix, tag="t"))
+        else:
+            merged_text = prefix + replacement + suffix
+            if extras:
+                merged_run = deepcopy(run)
+                merged_text_node = merged_run.find(_w("t"))
+                if merged_text_node is None:
+                    return None
+                _set_text_node(merged_text_node, merged_text)
+                parent.insert(idx, merged_run)
+            else:
+                parent.insert(idx, _build_run_like(run, merged_text, tag="t"))
+
+        return {
+            "old_text": matched,
+            "new_text": replacement,
+            "strategy": "localized_run",
+        }
+
+    return None
 
 
 def _replace_paragraph_content(
@@ -388,7 +500,7 @@ def apply_patch(
                 revision_id=next_revision_id,
                 timestamp=timestamp,
             )
-            report.update({"type": op_type, "paragraph_index": idx})
+            report.update({"type": op_type, "paragraph_index": idx, "strategy": "paragraph_rewrite"})
             op_reports.append(report)
             next_revision_id += 2
             continue
@@ -401,15 +513,26 @@ def apply_patch(
                 current = _paragraph_text(paragraph)
                 if find_text in current:
                     target_idx = idx
-                    new_text = current.replace(find_text, replacement, 1)
-                    report = _replace_paragraph_content(
+                    report = _replace_text_once_localized(
                         paragraph,
-                        new_text,
+                        find_text=find_text,
+                        replacement=replacement,
                         track_changes=track_changes,
                         author=author,
                         revision_id=next_revision_id,
                         timestamp=timestamp,
                     )
+                    if report is None:
+                        new_text = current.replace(find_text, replacement, 1)
+                        report = _replace_paragraph_content(
+                            paragraph,
+                            new_text,
+                            track_changes=track_changes,
+                            author=author,
+                            revision_id=next_revision_id,
+                            timestamp=timestamp,
+                        )
+                        report["strategy"] = "paragraph_rewrite"
                     report.update(
                         {
                             "type": op_type,
