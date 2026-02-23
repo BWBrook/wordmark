@@ -1,4 +1,4 @@
-# Wordmark Architecture (Phase 1)
+# Wordmark Architecture (Phase 3)
 
 ## Objective
 Provide a Linux-first, CLI-first workflow for editing `.docx` review state (comments + tracked changes) with controlled formatting risk and Git-friendly artifacts.
@@ -14,6 +14,13 @@ Wordmark uses a dual-engine mutation strategy:
   - paragraph-level tracked text replacement
   - targeted single replace
   - revision accept/reject by author/all
+- Supports phase-3 anchor resolution model:
+  - selector compatibility (`p:<index>`, `text:<snippet>`)
+  - paragraph+context anchor object (`paragraph_index`, `expected_text`, `context_before`, `context_after`, `occurrence`)
+- Emits richer preflight diagnostics:
+  - reason code/detail
+  - detected risky patterns
+  - recommended engine/strategy
 - Keeps untouched ZIP parts byte-identical.
 
 2. UNO fallback engine (`src/wordmark/uno_engine.py` + `scripts/uno_replace.py`)
@@ -31,11 +38,13 @@ Wordmark uses a dual-engine mutation strategy:
 - `src/wordmark/verify.py`: integrity and render-diff quality gates.
 - `src/wordmark/sidecar.py`: Git-friendly artifact writers.
 - `src/wordmark/transcript.py`: append-only operation audit log.
+- `examples/canonical/hard_patterns/`: canonical risky-markup fixture corpus.
 
 Edit strategy controls:
 - policy-driven strategy routing (`strict|balanced|aggressive`)
 - preflight classification (`--preflight-only`) before mutation
 - explicit fallback chain configuration (`on_unsupported`, `on_uno_fail`)
+- merge-back helper output (`review prepare-merge`) for Word desktop handoff
 
 ## Data and artifacts
 - Canonical source: `.docx` files.
@@ -68,3 +77,7 @@ Edit strategy controls:
 ## Known boundaries (Phase 2)
 - Localized tracked edits now support single-run and compatible multi-run replacements.
 - Complex run graphs (hyperlinks/field codes/content controls/mixed non-text runs) are policy-routed to UNO or comment-only fallback, not silently rewritten in strict mode.
+
+## Known boundaries (Phase 3)
+- Word desktop compare/combine remains a human-driven release action.
+- CLI intentionally does not write directly to cloud-hosted shared documents.

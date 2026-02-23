@@ -50,3 +50,21 @@
 - Context: Sidecar and render outputs in `artifacts/` are intentionally disposable, but accidental deletion of useful audit logs is a risk.
 - Decision: Add `wordmark artifacts clean` with safe preview default, explicit `--apply` for deletion, optional `--older-than-days` retention filter, and `--keep-transcripts` to preserve operation logs.
 - Consequences: Routine cleanup is one command and scriptable; destructive actions require explicit intent and are auditable via structured command output.
+
+## 2026-02-23 - ADR-009: Paragraph+context anchor model with backward selector compatibility
+- Status: accepted
+- Context: `p:<index>` and `text:<snippet>` selectors are simple but can be ambiguous in repeated-content documents.
+- Decision: Standardize richer anchor semantics (`paragraph_index`, `expected_text`, `context_before`, `context_after`, `occurrence`) while preserving legacy selector compatibility.
+- Consequences: Safer disambiguation for comments and edits; unresolved/ambiguous anchors now surface explicit error codes.
+
+## 2026-02-23 - ADR-010: Risky-markup-first preflight routing
+- Status: accepted
+- Context: Some paragraphs can appear localizable but still include fragile OOXML structures (hyperlinks, field codes, content controls, break/tab constructs).
+- Decision: Preflight and apply layers treat risky markup as high risk and route to fallback policy rather than attempting localized tracked mutation in strict workflows.
+- Consequences: Reduced chance of formatting/review-fidelity drift on complex constructs; more operations route through UNO/comment fallback.
+
+## 2026-02-23 - ADR-011: Word desktop compare/combine remains explicit human merge gate
+- Status: accepted
+- Context: Team requirement is no direct automated write-back to shared online files without human review.
+- Decision: Add explicit desktop merge-back SOP and a non-mutating CLI handoff helper (`review prepare-merge`) that prepares checklist/report metadata.
+- Consequences: Shared-doc updates remain human-approved; merge process is repeatable and documented.

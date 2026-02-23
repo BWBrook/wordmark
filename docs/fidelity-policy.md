@@ -1,4 +1,4 @@
-# Fidelity Policy (Phase 1)
+# Fidelity Policy (Phase 3)
 
 ## Scope
 This policy defines acceptance gates for Linux-native `.docx` review edits under the `business-docs` profile.
@@ -36,6 +36,28 @@ Target corpus includes:
   2. UNO fallback attempt
   3. Comment-only fallback if UNO fails (default policy)
 - Paragraph rewrite fallback in tracked mode is only allowed when explicitly enabled (for example `fidelity_mode=aggressive` or `--allow-paragraph-rewrite`).
+
+## Hard-pattern policy (Phase 3)
+- Canonical risky-markup fixtures are maintained under `examples/canonical/hard_patterns/`.
+- Preflight output must include per-operation:
+  - `reason_code`
+  - `reason_detail`
+  - `detected_patterns`
+  - `recommended_engine`
+  - `recommended_strategy`
+- In strict mode, risky-markup paragraphs (for example hyperlinks, field codes, content controls, run-break constructs) are treated as unsupported/high-risk and routed to fallback policy.
+
+## Anchor policy (Phase 3)
+- Preferred anchor model is paragraph+context:
+  - `paragraph_index`
+  - `expected_text`
+  - `context_before`
+  - `context_after`
+  - `occurrence`
+- Ambiguous or unresolved anchors must surface explicit machine-readable codes:
+  - `anchor_not_found`
+  - `anchor_ambiguous`
+  - `anchor_context_mismatch`
 
 ## Interop policy
 - Linux automated checks are mandatory.

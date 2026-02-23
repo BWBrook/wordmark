@@ -181,6 +181,7 @@ def _apply_comment_fallback(
         result = ooxml_engine.add_comment(
             docx,
             selector=selector,
+            anchor=None,
             text=comment_text,
             author=author,
             initials=initials,
@@ -291,6 +292,11 @@ def _to_relative(path: Path, root: Path) -> str:
         return str(path)
 
 
+def _date_suffix(now: datetime | None = None) -> str:
+    current = now or datetime.now(tz=timezone.utc)
+    return current.strftime("%a%d%b%Y").lower()
+
+
 @app.command("version")
 def version() -> None:
     """Print tool version."""
@@ -323,7 +329,12 @@ def inspect_cmd(
 @comment_app.command("add")
 def comment_add(
     docx: Path = typer.Argument(..., exists=True, readable=True, writable=True, resolve_path=True),
-    anchor: str = typer.Option(..., "--anchor", help="Anchor selector: p:<index> or text:<snippet>"),
+    anchor: str | None = typer.Option(None, "--anchor", help="Anchor selector: p:<index> or text:<snippet>"),
+    anchor_json: str | None = typer.Option(
+        None,
+        "--anchor-json",
+        help="Anchor object JSON (paragraph_index/expected_text/context_before/context_after/occurrence).",
+    ),
     text: str = typer.Option(..., "--text", help="Comment text."),
     author: str | None = typer.Option(None, "--author", help="Comment author label."),
     initials: str | None = typer.Option(None, "--initials", help="Comment initials."),
@@ -332,6 +343,16 @@ def comment_add(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Add a DOCX comment anchored to a paragraph or text snippet."""
+    if not anchor and not anchor_json:
+        raise ValueError("Provide either --anchor or --anchor-json")
+
+    anchor_payload: dict[str, Any] | None = None
+    if anchor_json:
+        parsed = json.loads(anchor_json)
+        if not isinstance(parsed, dict):
+            raise ValueError("--anchor-json must be a JSON object")
+        anchor_payload = parsed
+
     config = _load_app_config(config_path)
     resolved_author = _resolve_author(author, config)
     resolved_initials = _resolve_initials(initials, config)
@@ -339,6 +360,7 @@ def comment_add(
     result = ooxml_engine.add_comment(
         docx,
         selector=anchor,
+        anchor=anchor_payload,
         text=text,
         author=resolved_author,
         initials=resolved_initials,
@@ -595,6 +617,45 @@ def review_reject(
         "operation": _payload(result),
         "transcript": str(transcript_path),
     }
+    _echo(payload, json_output=json_output)
+
+
+@review_app.command("prepare-merge")
+def review_prepare_merge(
+    baseline: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    edited: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    out: Path | None = typer.Option(None, "--out", help="Optional JSON checklist/report output path."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Prepare a Word desktop compare/combine handoff checklist."""
+    extension = baseline.suffix if baseline.suffix else ".docx"
+    suggested_name = f"{baseline.stem}_merged_{_date_suffix()}{extension}"
+
+    checklist = [
+        "Open baseline and edited documents in Microsoft Word desktop.",
+        "Use Review > Compare (or Review > Compare > Combine) with baseline as original and edited as revised.",
+        "Review tracked changes and comments in the comparison output document.",
+        "Accept or reject revisions in the GUI until the document reflects approved content.",
+        "Save the merged document with a versioned filename and then upload/replace in shared storage.",
+    ]
+
+    payload: dict[str, Any] = {
+        "baseline": str(baseline),
+        "edited": str(edited),
+        "word_desktop_required": True,
+        "suggested_merged_filename": suggested_name,
+        "suggested_output_path": str(baseline.with_name(suggested_name)),
+        "checklist": checklist,
+        "notes": [
+            "This helper does not modify either source document.",
+            "Use Word desktop, not Word for the web, for Compare/Combine.",
+        ],
+    }
+
+    if out is not None:
+        write_json(out, payload)
+        payload["report"] = str(out)
+
     _echo(payload, json_output=json_output)
 
 

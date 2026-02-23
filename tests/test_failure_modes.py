@@ -9,7 +9,7 @@ from wordmark import uno_engine
 
 
 def test_broken_anchor_raises(sample_docx: Path) -> None:
-    with pytest.raises(ValueError, match="Snippet not found"):
+    with pytest.raises(ValueError, match="Anchor"):
         ooxml_engine.add_comment(
             sample_docx,
             selector="text:__missing_anchor__",

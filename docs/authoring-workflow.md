@@ -25,9 +25,22 @@ uv run wordmark comment add docs/input.docx \
   --initials "BB" \
   --json
 ```
+Or use paragraph+context anchor JSON:
+```bash
+uv run wordmark comment add docs/input.docx \
+  --anchor-json '{"expected_text":"reviewword","context_before":"Section B","occurrence":1}' \
+  --text "Please tighten this paragraph." \
+  --json
+```
 Supported anchors:
 - `p:<index>` paragraph index
 - `text:<snippet>` first paragraph containing snippet
+- anchor JSON object fields:
+  - `paragraph_index` (optional)
+  - `expected_text` (optional)
+  - `context_before` (optional)
+  - `context_after` (optional)
+  - `occurrence` (optional, 1-based)
 
 ## 3) Apply tracked edits via patch JSON
 Example patch (`patch.json`):
@@ -42,7 +55,11 @@ Example patch (`patch.json`):
     {
       "type": "replace_text_once",
       "find": "Draft",
-      "replace": "Final"
+      "replace": "Final",
+      "anchor": {
+        "expected_text": "Draft appears",
+        "context_before": "Divider Context"
+      }
     }
   ]
 }
@@ -65,6 +82,7 @@ Preflight strategy selection without mutation:
 ```bash
 uv run wordmark edit apply docs/input.docx --patch patch.json --preflight-only --json
 ```
+Preflight JSON includes `reason_code`, `reason_detail`, `detected_patterns`, `recommended_engine`, and `recommended_strategy`.
 
 Policy controls:
 ```bash
@@ -77,6 +95,8 @@ Defaults in strict mode:
 - no tracked paragraph rewrite fallback
 - OOXML strict -> UNO -> comment-only fallback
 
+Hard-pattern fixtures for regression testing are in `examples/canonical/hard_patterns/`.
+
 ## 4) Review operations
 List:
 ```bash
@@ -88,6 +108,12 @@ Accept/reject revisions:
 uv run wordmark review accept docs/input.docx --author "Barry Brook" --json
 uv run wordmark review reject docs/input.docx --all --json
 ```
+
+Prepare Word desktop compare/combine handoff:
+```bash
+uv run wordmark review prepare-merge docs/before.docx docs/after.docx --json
+```
+See `docs/release_gate_word_desktop.md` for the manual release checklist.
 
 ## 5) Fidelity verification
 ```bash

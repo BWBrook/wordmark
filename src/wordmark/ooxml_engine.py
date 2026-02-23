@@ -27,6 +27,15 @@ class OoxmlUnsupportedOperation(RuntimeError):
     """Operation must be handled by fallback engine."""
 
 
+class AnchorResolutionError(ValueError):
+    """Anchor resolution failed with a machine-readable code."""
+
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.details = details or {}
+
+
 def _w(local: str) -> str:
     return f"{{{W_NS}}}{local}"
 
@@ -72,25 +81,150 @@ def _next_numeric_id(elements: list[etree._Element], attr_qname: str) -> int:
     return (max(values) + 1) if values else 0
 
 
-def _resolve_anchor(document_root: etree._Element, selector: str) -> tuple[int, etree._Element]:
-    paragraphs = document_root.xpath(".//w:body//w:p", namespaces=NSMAP)
+def _body_paragraphs(document_root: etree._Element) -> list[etree._Element]:
+    return document_root.xpath(".//w:body//w:p", namespaces=NSMAP)
+
+
+def _paragraph_at(paragraphs: list[etree._Element], idx: int) -> str:
+    if idx < 0 or idx >= len(paragraphs):
+        return ""
+    return _paragraph_text(paragraphs[idx])
+
+
+def _normalize_anchor(
+    *,
+    selector: str | None = None,
+    anchor: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if selector:
+        if selector.startswith("p:"):
+            out["paragraph_index"] = int(selector.split(":", 1)[1])
+        elif selector.startswith("text:"):
+            out["expected_text"] = selector.split(":", 1)[1]
+        else:
+            raise AnchorResolutionError(
+                "anchor_not_found",
+                "Unsupported selector. Use 'p:<index>' or 'text:<snippet>'",
+                {"selector": selector},
+            )
+
+    if anchor:
+        out.update({k: v for k, v in anchor.items() if v is not None})
+    return out
+
+
+def _resolve_anchor_spec(
+    document_root: etree._Element,
+    *,
+    selector: str | None = None,
+    anchor: dict[str, Any] | None = None,
+    fallback_text: str | None = None,
+) -> tuple[int, etree._Element, dict[str, Any]]:
+    paragraphs = _body_paragraphs(document_root)
     if not paragraphs:
-        raise ValueError("No paragraphs found in document")
+        raise AnchorResolutionError("anchor_not_found", "No paragraphs found in document")
 
-    if selector.startswith("p:"):
-        idx = int(selector.split(":", 1)[1])
+    spec = _normalize_anchor(selector=selector, anchor=anchor)
+    paragraph_index = spec.get("paragraph_index")
+    expected_text = spec.get("expected_text")
+    context_before = spec.get("context_before")
+    context_after = spec.get("context_after")
+    occurrence_raw = spec.get("occurrence")
+    occurrence_provided = occurrence_raw is not None
+    occurrence = 1 if occurrence_raw is None else int(occurrence_raw)
+    if occurrence < 1:
+        raise AnchorResolutionError(
+            "anchor_context_mismatch",
+            f"Anchor occurrence must be >= 1, got {occurrence}",
+            {"occurrence": occurrence},
+        )
+
+    candidate_indices = list(range(len(paragraphs)))
+
+    if paragraph_index is not None:
+        idx = int(paragraph_index)
         if idx < 0 or idx >= len(paragraphs):
-            raise ValueError(f"Paragraph index out of range: {idx}")
-        return idx, paragraphs[idx]
+            raise AnchorResolutionError(
+                "anchor_not_found",
+                f"Paragraph index out of range: {idx}",
+                {"paragraph_index": idx, "paragraph_count": len(paragraphs)},
+            )
+        candidate_indices = [idx]
 
-    if selector.startswith("text:"):
-        snippet = selector.split(":", 1)[1]
-        for idx, p in enumerate(paragraphs):
-            if snippet in _paragraph_text(p):
-                return idx, p
-        raise ValueError(f"Snippet not found in document: {snippet!r}")
+    filter_text = None
+    if isinstance(expected_text, str) and expected_text:
+        filter_text = expected_text
+    elif fallback_text:
+        filter_text = fallback_text
 
-    raise ValueError("Unsupported selector. Use 'p:<index>' or 'text:<snippet>'")
+    if filter_text:
+        candidate_indices = [
+            idx for idx in candidate_indices if filter_text in _paragraph_text(paragraphs[idx])
+        ]
+
+    if isinstance(context_before, str) and context_before:
+        candidate_indices = [
+            idx
+            for idx in candidate_indices
+            if idx > 0 and context_before in _paragraph_at(paragraphs, idx - 1)
+        ]
+    if isinstance(context_after, str) and context_after:
+        candidate_indices = [
+            idx
+            for idx in candidate_indices
+            if idx < (len(paragraphs) - 1) and context_after in _paragraph_at(paragraphs, idx + 1)
+        ]
+
+    if not candidate_indices:
+        code = "anchor_context_mismatch" if any([context_before, context_after]) else "anchor_not_found"
+        raise AnchorResolutionError(
+            code,
+            "Anchor did not resolve to any paragraph",
+            {
+                "anchor": spec,
+                "fallback_text": fallback_text,
+                "paragraph_count": len(paragraphs),
+            },
+        )
+
+    candidate_indices = sorted(candidate_indices)
+    if occurrence_provided:
+        if occurrence > len(candidate_indices):
+            raise AnchorResolutionError(
+                "anchor_not_found",
+                f"Anchor occurrence out of range: {occurrence} > {len(candidate_indices)}",
+                {
+                    "occurrence": occurrence,
+                    "candidate_count": len(candidate_indices),
+                    "candidates": candidate_indices,
+                },
+            )
+        selected_idx = candidate_indices[occurrence - 1]
+    elif len(candidate_indices) == 1:
+        selected_idx = candidate_indices[0]
+    else:
+        raise AnchorResolutionError(
+            "anchor_ambiguous",
+            "Anchor resolved to multiple candidate paragraphs",
+            {
+                "candidate_count": len(candidate_indices),
+                "candidates": candidate_indices,
+                "hint": "Provide anchor.occurrence or stronger context_before/context_after",
+            },
+        )
+
+    return selected_idx, paragraphs[selected_idx], {
+        "anchor": spec,
+        "resolved_index": selected_idx,
+        "candidate_count": len(candidate_indices),
+        "candidates": candidate_indices,
+    }
+
+
+def _resolve_anchor(document_root: etree._Element, selector: str) -> tuple[int, etree._Element]:
+    idx, paragraph, _ = _resolve_anchor_spec(document_root, selector=selector)
+    return idx, paragraph
 
 
 def _ensure_comments_infrastructure(pkg: DocxPackage) -> etree._Element:
@@ -213,27 +347,33 @@ def _text_run_spans_multiple_runs(paragraph: etree._Element, find_text: str) -> 
     return touched > 1
 
 
-def _paragraph_has_risky_markup(paragraph: etree._Element) -> bool:
-    risky = {
-        _w("hyperlink"),
-        _w("instrText"),
-        _w("fldChar"),
-        _w("drawing"),
-        _w("object"),
-        _w("pict"),
-        _w("sdt"),
-        _w("smartTag"),
-        _w("tab"),
-        _w("br"),
-        _w("cr"),
-        _w("sym"),
-        _w("footnoteReference"),
-        _w("endnoteReference"),
+def _paragraph_risky_patterns(paragraph: etree._Element) -> list[str]:
+    risky_map = {
+        _w("hyperlink"): "hyperlink",
+        _w("instrText"): "instrText",
+        _w("fldChar"): "fldChar",
+        _w("drawing"): "drawing",
+        _w("object"): "object",
+        _w("pict"): "pict",
+        _w("sdt"): "sdt",
+        _w("smartTag"): "smartTag",
+        _w("tab"): "tab",
+        _w("br"): "br",
+        _w("cr"): "cr",
+        _w("sym"): "sym",
+        _w("footnoteReference"): "footnoteReference",
+        _w("endnoteReference"): "endnoteReference",
     }
+    found: set[str] = set()
     for el in paragraph.iter():
-        if el.tag in risky:
-            return True
-    return False
+        pattern = risky_map.get(el.tag)
+        if pattern:
+            found.add(pattern)
+    return sorted(found)
+
+
+def _paragraph_has_risky_markup(paragraph: etree._Element) -> bool:
+    return bool(_paragraph_risky_patterns(paragraph))
 
 
 def _replace_text_once_localized(
@@ -524,7 +664,8 @@ def list_review(path: Path) -> dict[str, Any]:
 def add_comment(
     path: Path,
     *,
-    selector: str,
+    selector: str | None = None,
+    anchor: dict[str, Any] | None = None,
     text: str,
     author: str,
     initials: str,
@@ -534,7 +675,11 @@ def add_comment(
     doc_root = pkg.read_xml(DOC_PART)
     comments_root = _ensure_comments_infrastructure(pkg)
 
-    paragraph_index, paragraph = _resolve_anchor(doc_root, selector)
+    paragraph_index, paragraph, anchor_resolution = _resolve_anchor_spec(
+        doc_root,
+        selector=selector,
+        anchor=anchor,
+    )
 
     next_comment_id = _next_numeric_id(comments_root.findall(_w("comment")), _w_attr("id"))
     timestamp = _now_w3c()
@@ -578,6 +723,8 @@ def add_comment(
         details={
             "comment_id": next_comment_id,
             "selector": selector,
+            "anchor": anchor or {},
+            "anchor_resolution": anchor_resolution,
             "paragraph_index": paragraph_index,
             "timestamp": timestamp,
             "dry_run": dry_run,
@@ -602,6 +749,20 @@ def _find_replace_once_target(
     return None
 
 
+def _anchor_from_operation(op: dict[str, Any]) -> dict[str, Any] | None:
+    raw_anchor = op.get("anchor")
+    if raw_anchor is not None and not isinstance(raw_anchor, dict):
+        raise ValueError("Operation anchor must be an object")
+
+    merged: dict[str, Any] = {}
+    for key in ("paragraph_index", "expected_text", "context_before", "context_after", "occurrence"):
+        if key in op and op.get(key) is not None:
+            merged[key] = op.get(key)
+    if isinstance(raw_anchor, dict):
+        merged.update({k: v for k, v in raw_anchor.items() if v is not None})
+    return merged or None
+
+
 def preflight_patch(
     path: Path,
     *,
@@ -616,7 +777,7 @@ def preflight_patch(
 
     pkg = DocxPackage.open(path)
     doc_root = pkg.read_xml(DOC_PART)
-    paragraphs = doc_root.xpath(".//w:body//w:p", namespaces=NSMAP)
+    paragraphs = _body_paragraphs(doc_root)
     if not paragraphs:
         raise ValueError("No paragraphs found in document body")
 
@@ -635,18 +796,65 @@ def preflight_patch(
             "type": op_type,
             "classification": "",
             "recommended_strategy": "",
+            "recommended_engine": "",
             "paragraph_index": None,
             "reason": "",
+            "reason_code": "",
+            "reason_detail": "",
+            "detected_patterns": [],
         }
 
         if op_type == "replace_paragraph_text":
-            idx = int(op["paragraph_index"])
-            if idx < 0 or idx >= len(paragraphs):
+            try:
+                anchor = _anchor_from_operation(op)
+                resolve_anchor = dict(anchor or {})
+                if "paragraph_index" in resolve_anchor:
+                    # Preserve legacy behavior: expected_text mismatch is checked after index selection.
+                    resolve_anchor.pop("expected_text", None)
+                idx, paragraph, anchor_resolution = _resolve_anchor_spec(doc_root, anchor=resolve_anchor)
+                report["paragraph_index"] = idx
+                report["anchor_resolution"] = anchor_resolution
+            except AnchorResolutionError as exc:
                 report.update(
                     {
                         "classification": "unsupported_high_risk",
                         "recommended_strategy": "none",
-                        "reason": "paragraph_index_out_of_range",
+                        "recommended_engine": "comment_fallback",
+                        "reason": exc.code,
+                        "reason_code": exc.code,
+                        "reason_detail": str(exc),
+                        "anchor_details": exc.details,
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+            except ValueError as exc:
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "recommended_engine": "comment_fallback",
+                        "reason": "invalid_anchor_payload",
+                        "reason_code": "invalid_anchor_payload",
+                        "reason_detail": str(exc),
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+
+            risky_patterns = _paragraph_risky_patterns(paragraph)
+            if risky_patterns:
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "recommended_engine": "uno",
+                        "reason": "risky_markup_detected",
+                        "reason_code": "risky_markup_detected",
+                        "reason_detail": "Paragraph contains risky OOXML markup for paragraph rewrite",
+                        "detected_patterns": risky_patterns,
                     }
                 )
             elif track_changes and not allow_paragraph_rewrite_tracked:
@@ -654,8 +862,10 @@ def preflight_patch(
                     {
                         "classification": "requires_uno",
                         "recommended_strategy": "uno",
-                        "paragraph_index": idx,
+                        "recommended_engine": "uno",
                         "reason": "tracked_paragraph_rewrite_disallowed",
+                        "reason_code": "tracked_paragraph_rewrite_disallowed",
+                        "reason_detail": "Strict tracked mode disallows paragraph rewrite fallback",
                     }
                 )
             else:
@@ -663,8 +873,10 @@ def preflight_patch(
                     {
                         "classification": "safe_localized",
                         "recommended_strategy": "paragraph_rewrite",
-                        "paragraph_index": idx,
+                        "recommended_engine": "ooxml",
                         "reason": "explicit_paragraph_replace",
+                        "reason_code": "explicit_paragraph_replace",
+                        "reason_detail": "Paragraph rewrite is allowed under current policy",
                     }
                 )
 
@@ -675,13 +887,40 @@ def preflight_patch(
         if op_type == "replace_text_once":
             find_text = str(op["find"])
             replacement = str(op["replace"])
-            target = _find_replace_once_target(paragraphs, find_text)
-            if target is None:
+            try:
+                anchor = _anchor_from_operation(op)
+                idx, paragraph, anchor_resolution = _resolve_anchor_spec(
+                    doc_root,
+                    anchor=anchor,
+                    fallback_text=find_text,
+                )
+                report["paragraph_index"] = idx
+                report["anchor_resolution"] = anchor_resolution
+            except AnchorResolutionError as exc:
                 report.update(
                     {
                         "classification": "unsupported_high_risk",
                         "recommended_strategy": "none",
-                        "reason": "find_text_not_found",
+                        "recommended_engine": "comment_fallback",
+                        "reason": exc.code,
+                        "reason_code": exc.code,
+                        "reason_detail": str(exc),
+                        "anchor_details": exc.details,
+                        "find": find_text,
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+            except ValueError as exc:
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "recommended_engine": "comment_fallback",
+                        "reason": "invalid_anchor_payload",
+                        "reason_code": "invalid_anchor_payload",
+                        "reason_detail": str(exc),
                         "find": find_text,
                     }
                 )
@@ -689,8 +928,39 @@ def preflight_patch(
                 op_reports.append(report)
                 continue
 
-            idx, paragraph = target
-            report["paragraph_index"] = idx
+            if find_text not in _paragraph_text(paragraph):
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "recommended_engine": "comment_fallback",
+                        "reason": "find_text_not_in_resolved_anchor",
+                        "reason_code": "find_text_not_in_resolved_anchor",
+                        "reason_detail": f"find={find_text!r} not present at resolved paragraph {idx}",
+                        "find": find_text,
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+
+            risky_patterns = _paragraph_risky_patterns(paragraph)
+            if risky_patterns:
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "recommended_engine": "uno",
+                        "reason": "risky_markup_detected",
+                        "reason_code": "risky_markup_detected",
+                        "reason_detail": "Resolved paragraph contains risky OOXML markup",
+                        "detected_patterns": risky_patterns,
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+
             probe = _replace_text_once_localized(
                 deepcopy(paragraph),
                 find_text=find_text,
@@ -705,15 +975,10 @@ def preflight_patch(
                     {
                         "classification": "safe_localized",
                         "recommended_strategy": str(probe.get("strategy", "localized_run")),
+                        "recommended_engine": "ooxml",
                         "reason": "localized_strategy_available",
-                    }
-                )
-            elif _paragraph_has_risky_markup(paragraph):
-                report.update(
-                    {
-                        "classification": "unsupported_high_risk",
-                        "recommended_strategy": "none",
-                        "reason": "risky_markup_detected",
+                        "reason_code": "localized_strategy_available",
+                        "reason_detail": f"Localized strategy {probe.get('strategy', 'localized_run')} is available",
                     }
                 )
             elif _text_run_spans_multiple_runs(paragraph, find_text):
@@ -721,7 +986,11 @@ def preflight_patch(
                     {
                         "classification": "needs_multi_run_localized",
                         "recommended_strategy": "uno" if track_changes and not allow_paragraph_rewrite_tracked else "paragraph_rewrite",
+                        "recommended_engine": "uno" if track_changes and not allow_paragraph_rewrite_tracked else "ooxml",
                         "reason": "match_spans_multiple_runs",
+                        "reason_code": "match_spans_multiple_runs",
+                        "reason_detail": "Match spans runs that are not safely localizable in this paragraph",
+                        "detected_patterns": ["match_spans_multiple_runs"],
                     }
                 )
             elif track_changes and not allow_paragraph_rewrite_tracked:
@@ -729,7 +998,10 @@ def preflight_patch(
                     {
                         "classification": "requires_uno",
                         "recommended_strategy": "uno",
+                        "recommended_engine": "uno",
                         "reason": "tracked_paragraph_rewrite_disallowed",
+                        "reason_code": "tracked_paragraph_rewrite_disallowed",
+                        "reason_detail": "Strict tracked mode disallows paragraph rewrite fallback",
                     }
                 )
             else:
@@ -737,7 +1009,10 @@ def preflight_patch(
                     {
                         "classification": "requires_uno",
                         "recommended_strategy": "paragraph_rewrite",
+                        "recommended_engine": "ooxml",
                         "reason": "localized_strategy_unavailable",
+                        "reason_code": "localized_strategy_unavailable",
+                        "reason_detail": "Fallback would require paragraph rewrite",
                     }
                 )
 
@@ -749,7 +1024,10 @@ def preflight_patch(
             {
                 "classification": "requires_uno",
                 "recommended_strategy": "uno",
+                "recommended_engine": "uno",
                 "reason": f"unsupported_ooxml_op:{op_type}",
+                "reason_code": "unsupported_ooxml_op",
+                "reason_detail": f"Operation type {op_type!r} is not implemented in OOXML engine",
             }
         )
         summary[report["classification"]] += 1
@@ -802,10 +1080,20 @@ def apply_patch(
         op_type = str(op.get("type"))
 
         if op_type == "replace_paragraph_text":
-            idx = int(op["paragraph_index"])
-            if idx < 0 or idx >= len(paragraphs):
-                raise ValueError(f"paragraph_index out of range: {idx}")
-            p = paragraphs[idx]
+            anchor = _anchor_from_operation(op)
+            resolve_anchor = dict(anchor or {})
+            if "paragraph_index" in resolve_anchor:
+                resolve_anchor.pop("expected_text", None)
+            try:
+                idx, p, anchor_resolution = _resolve_anchor_spec(doc_root, anchor=resolve_anchor)
+            except AnchorResolutionError as exc:
+                raise ValueError(f"{exc.code}: {exc}") from exc
+            risky_patterns = _paragraph_risky_patterns(p)
+            if risky_patterns:
+                raise OoxmlUnsupportedOperation(
+                    "Risky OOXML markup detected for paragraph rewrite "
+                    f"at paragraph {idx}: {', '.join(risky_patterns)}"
+                )
             if track_changes and not allow_paragraph_rewrite_tracked:
                 raise OoxmlUnsupportedOperation(
                     f"Tracked paragraph rewrite disallowed by fidelity policy at paragraph {idx}"
@@ -825,7 +1113,15 @@ def apply_patch(
                 revision_id=next_revision_id,
                 timestamp=timestamp,
             )
-            report.update({"type": op_type, "paragraph_index": idx, "strategy": "paragraph_rewrite"})
+            report.update(
+                {
+                    "type": op_type,
+                    "paragraph_index": idx,
+                    "strategy": "paragraph_rewrite",
+                    "anchor": anchor or {},
+                    "anchor_resolution": anchor_resolution,
+                }
+            )
             op_reports.append(report)
             next_revision_id += 2
             continue
@@ -833,49 +1129,79 @@ def apply_patch(
         if op_type == "replace_text_once":
             find_text = str(op["find"])
             replacement = str(op["replace"])
-            target_idx = None
-            for idx, paragraph in enumerate(paragraphs):
+            anchor = _anchor_from_operation(op)
+            if anchor:
+                try:
+                    idx, paragraph, anchor_resolution = _resolve_anchor_spec(
+                        doc_root,
+                        anchor=anchor,
+                        fallback_text=find_text,
+                    )
+                except AnchorResolutionError as exc:
+                    raise ValueError(f"{exc.code}: {exc}") from exc
                 current = _paragraph_text(paragraph)
-                if find_text in current:
-                    target_idx = idx
-                    report = _replace_text_once_localized(
-                        paragraph,
-                        find_text=find_text,
-                        replacement=replacement,
-                        track_changes=track_changes,
-                        author=author,
-                        revision_id=next_revision_id,
-                        timestamp=timestamp,
+                if find_text not in current:
+                    raise ValueError(
+                        f"find_text_not_in_resolved_anchor: find={find_text!r} at paragraph {idx}"
                     )
-                    if report is None:
-                        if track_changes and not allow_paragraph_rewrite_tracked:
-                            raise OoxmlUnsupportedOperation(
-                                "Localized replace unsupported and tracked paragraph rewrite disallowed "
-                                f"for find={find_text!r} at paragraph {idx}"
-                            )
-                        new_text = current.replace(find_text, replacement, 1)
-                        report = _replace_paragraph_content(
-                            paragraph,
-                            new_text,
-                            track_changes=track_changes,
-                            author=author,
-                            revision_id=next_revision_id,
-                            timestamp=timestamp,
-                        )
-                        report["strategy"] = "paragraph_rewrite"
-                    report.update(
-                        {
-                            "type": op_type,
-                            "paragraph_index": idx,
-                            "find": find_text,
-                            "replace": replacement,
-                        }
+            else:
+                target = _find_replace_once_target(paragraphs, find_text)
+                if target is None:
+                    raise ValueError(f"Text not found for replace_text_once: {find_text!r}")
+                idx, paragraph = target
+                current = _paragraph_text(paragraph)
+                anchor_resolution = {
+                    "anchor": {},
+                    "resolved_index": idx,
+                    "candidate_count": 1,
+                    "candidates": [idx],
+                }
+
+            risky_patterns = _paragraph_risky_patterns(paragraph)
+            if risky_patterns:
+                raise OoxmlUnsupportedOperation(
+                    "Risky OOXML markup detected for localized replace_text_once "
+                    f"at paragraph {idx}: {', '.join(risky_patterns)}"
+                )
+
+            report = _replace_text_once_localized(
+                paragraph,
+                find_text=find_text,
+                replacement=replacement,
+                track_changes=track_changes,
+                author=author,
+                revision_id=next_revision_id,
+                timestamp=timestamp,
+            )
+            if report is None:
+                if track_changes and not allow_paragraph_rewrite_tracked:
+                    raise OoxmlUnsupportedOperation(
+                        "Localized replace unsupported and tracked paragraph rewrite disallowed "
+                        f"for find={find_text!r} at paragraph {idx}"
                     )
-                    op_reports.append(report)
-                    next_revision_id += 2
-                    break
-            if target_idx is None:
-                raise ValueError(f"Text not found for replace_text_once: {find_text!r}")
+                new_text = current.replace(find_text, replacement, 1)
+                report = _replace_paragraph_content(
+                    paragraph,
+                    new_text,
+                    track_changes=track_changes,
+                    author=author,
+                    revision_id=next_revision_id,
+                    timestamp=timestamp,
+                )
+                report["strategy"] = "paragraph_rewrite"
+
+            report.update(
+                {
+                    "type": op_type,
+                    "paragraph_index": idx,
+                    "find": find_text,
+                    "replace": replacement,
+                    "anchor": anchor or {},
+                    "anchor_resolution": anchor_resolution,
+                }
+            )
+            op_reports.append(report)
+            next_revision_id += 2
             continue
 
     result = OperationResult.now(

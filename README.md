@@ -21,10 +21,12 @@ uv run pytest
 ```bash
 uv run wordmark inspect <file.docx> --json
 uv run wordmark comment add <file.docx> --anchor "p:1" --text "Review note" --json
+uv run wordmark comment add <file.docx> --anchor-json '{"expected_text":"reviewword","context_before":"Section B"}' --text "Review note" --json
 uv run wordmark edit apply <file.docx> --patch patch.json --json
 uv run wordmark review list <file.docx> --json
 uv run wordmark review accept <file.docx> --author "Barry Brook" --json
 uv run wordmark review reject <file.docx> --all --json
+uv run wordmark review prepare-merge before.docx after.docx --json
 uv run wordmark verify before.docx after.docx --profile business-docs --json
 uv run wordmark render <file.docx> --out tmp/docs/render_out --json
 uv run wordmark artifacts clean --json
@@ -33,6 +35,7 @@ uv run wordmark artifacts clean --older-than-days 7 --apply --json
 
 ## Canonical and edited fixtures
 - Canonical immutable examples live under `examples/canonical/`.
+- Hard-pattern preflight fixtures live under `examples/canonical/hard_patterns/`.
 - Edited/generated working outputs belong under `examples/edited/`.
 - Default safety policy is high-fidelity first: strict OOXML localized edits, then UNO fallback, then comment-only fallback (unless overridden by CLI/config flags).
 
@@ -47,6 +50,19 @@ uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode strict
 # Aggressive mode: allow tracked paragraph rewrite fallback when needed
 uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode aggressive --json
 ```
+
+`--preflight-only` returns per-operation diagnostics including:
+- `classification`
+- `reason_code` and `reason_detail`
+- `detected_patterns`
+- `recommended_engine` and `recommended_strategy`
+
+## Merge-Back Workflow
+For shared/online docs, keep agent edits in local copies and merge by human approval in Word desktop:
+```bash
+uv run wordmark review prepare-merge before.docx after.docx --json
+```
+Detailed checklist: `docs/release_gate_word_desktop.md`.
 
 ## Artifact housekeeping
 ```bash
