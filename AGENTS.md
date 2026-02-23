@@ -20,7 +20,8 @@ When instructions conflict, follow this order:
 1. Never overwrite original user files unless explicitly requested.
 2. For edited outputs, write a new file with a clear suffix.
 3. Preferred suffix format for `.docx` edits: `_edited_<dow><dd><mon><yyyy>` in lowercase, for example `_edited_mon23feb2026`.
-4. Always report the exact output path and filename at completion.
+4. Store repo-local edited fixture outputs under `examples/edited/`; keep `examples/canonical/` unmodified.
+5. Always report the exact output path and filename at completion.
 
 ## Execution Expectations
 1. Execute tasks end-to-end autonomously unless blocked.

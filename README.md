@@ -27,6 +27,40 @@ uv run wordmark review accept <file.docx> --author "Barry Brook" --json
 uv run wordmark review reject <file.docx> --all --json
 uv run wordmark verify before.docx after.docx --profile business-docs --json
 uv run wordmark render <file.docx> --out tmp/docs/render_out --json
+uv run wordmark artifacts clean --json
+uv run wordmark artifacts clean --older-than-days 7 --apply --json
+```
+
+## Canonical and edited fixtures
+- Canonical immutable examples live under `examples/canonical/`.
+- Edited/generated working outputs belong under `examples/edited/`.
+- Default safety policy is high-fidelity first: strict OOXML localized edits, then UNO fallback, then comment-only fallback (unless overridden by CLI/config flags).
+
+## Edit policy controls
+```bash
+# Inspect strategy without mutating
+uv run wordmark edit apply <file.docx> --patch patch.json --preflight-only --json
+
+# Strict mode (default): no tracked paragraph rewrite fallback
+uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode strict --json
+
+# Aggressive mode: allow tracked paragraph rewrite fallback when needed
+uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode aggressive --json
+```
+
+## Artifact housekeeping
+```bash
+# Preview cleanup scope (safe default)
+uv run wordmark artifacts clean --json
+
+# Remove all removable files under artifacts/
+uv run wordmark artifacts clean --apply --json
+
+# Remove only files older than 7 days
+uv run wordmark artifacts clean --older-than-days 7 --apply --json
+
+# Keep operations transcript while cleaning stale sidecars
+uv run wordmark artifacts clean --older-than-days 7 --keep-transcripts --apply --json
 ```
 
 ## Default config
@@ -35,3 +69,4 @@ uv run wordmark render <file.docx> --out tmp/docs/render_out --json
 - default initials (`BB`)
 - track-changes default on
 - engine preference (`ooxml`, then `uno` fallback)
+- fidelity policy and fallback behavior (`strict|balanced|aggressive`, unsupported handling, UNO-fail handling)

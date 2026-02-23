@@ -29,3 +29,24 @@
 - Context: Paragraph-rewrite tracked edits caused whole-sentence redlines for single-word changes, reducing review fidelity.
 - Decision: For `replace_text_once`, attempt localized run-level split first and emit word-level `w:del`/`w:ins` when match is contained in a safe run shape. Fall back to paragraph rewrite only when localized split is unsafe/unsupported.
 - Consequences: Common single-word corrections now produce precise revisions in Word; complex multi-run cases still degrade to paragraph-level rewrites until richer run-diff logic is implemented.
+
+## 2026-02-23 - ADR-006: Strict fidelity policy with explicit fallback routing
+- Status: accepted
+- Context: Even with localized run-level edits, complex patterns can still trigger fidelity-degrading rewrites.
+- Decision: Introduce explicit policy controls (`fidelity_mode`, `on_unsupported`, `on_uno_fail`, `allow_paragraph_rewrite_tracked`) with default chain:
+  1. OOXML strict localized attempt
+  2. UNO fallback
+  3. Comment-only fallback
+- Consequences: No silent tracked paragraph rewrites in strict mode; behavior is deterministic and auditable via preflight/strategy metadata.
+
+## 2026-02-23 - ADR-007: Canonical vs edited fixture separation
+- Status: accepted
+- Context: Mounted-drive test files are ephemeral and unsafe as long-term baselines.
+- Decision: Store immutable fixture baselines under `examples/canonical/` and generated edited outputs under `examples/edited/`.
+- Consequences: Reproducible local test corpus and reduced risk of mutating canonical examples.
+
+## 2026-02-23 - ADR-008: Artifact cleanup command defaults to preview mode
+- Status: accepted
+- Context: Sidecar and render outputs in `artifacts/` are intentionally disposable, but accidental deletion of useful audit logs is a risk.
+- Decision: Add `wordmark artifacts clean` with safe preview default, explicit `--apply` for deletion, optional `--older-than-days` retention filter, and `--keep-transcripts` to preserve operation logs.
+- Consequences: Routine cleanup is one command and scriptable; destructive actions require explicit intent and are auditable via structured command output.

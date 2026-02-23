@@ -4,6 +4,15 @@ track_changes_default: true
 engine_order:
   - ooxml
   - uno
+fidelity_mode: strict
+allow_paragraph_rewrite_tracked: false
+fallback_policy:
+  on_ooxml_unsupported: uno
+  on_uno_fail: comment
+comment_fallback:
+  enabled: true
+  template: "Suggested edit: replace '{find}' with '{replace}'. Reason: {reason}. Classification: {classification}."
+  anchor_strategy: "best-effort-match"
 fidelity_profiles:
   - business-docs
 sidecar:
@@ -16,3 +25,4 @@ sidecar:
     report: "artifacts/{stem}.report.json"
     render_diff: "artifacts/{stem}.render"
 transcript_path: "artifacts/transcripts/operations.jsonl"
+edited_output_dir: "examples/edited"

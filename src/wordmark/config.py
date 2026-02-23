@@ -26,14 +26,35 @@ class SidecarConfig:
 
 
 @dataclass(slots=True)
+class FallbackPolicy:
+    on_ooxml_unsupported: str = "uno"
+    on_uno_fail: str = "comment"
+
+
+@dataclass(slots=True)
+class CommentFallbackConfig:
+    enabled: bool = True
+    template: str = (
+        "Suggested edit: replace '{find}' with '{replace}'. "
+        "Reason: {reason}. Classification: {classification}."
+    )
+    anchor_strategy: str = "best-effort-match"
+
+
+@dataclass(slots=True)
 class AppConfig:
     default_author: str = "Barry Brook"
     default_initials: str = "BB"
     track_changes_default: bool = True
     engine_order: tuple[str, ...] = ("ooxml", "uno")
+    fidelity_mode: str = "strict"
+    allow_paragraph_rewrite_tracked: bool = False
+    fallback_policy: FallbackPolicy = field(default_factory=FallbackPolicy)
+    comment_fallback: CommentFallbackConfig = field(default_factory=CommentFallbackConfig)
     fidelity_profiles: tuple[str, ...] = ("business-docs",)
     sidecar: SidecarConfig = field(default_factory=SidecarConfig)
     transcript_path: str = "artifacts/transcripts/operations.jsonl"
+    edited_output_dir: str = "examples/edited"
 
 
 DEFAULT_CONFIG_PATH = Path("wordmark.yaml")
@@ -60,6 +81,20 @@ def load_config(path: Path | None = None) -> AppConfig:
         "default_initials": "BB",
         "track_changes_default": True,
         "engine_order": ["ooxml", "uno"],
+        "fidelity_mode": "strict",
+        "allow_paragraph_rewrite_tracked": False,
+        "fallback_policy": {
+            "on_ooxml_unsupported": "uno",
+            "on_uno_fail": "comment",
+        },
+        "comment_fallback": {
+            "enabled": True,
+            "template": (
+                "Suggested edit: replace '{find}' with '{replace}'. "
+                "Reason: {reason}. Classification: {classification}."
+            ),
+            "anchor_strategy": "best-effort-match",
+        },
         "fidelity_profiles": ["business-docs"],
         "sidecar": {
             "enabled": True,
@@ -73,16 +108,31 @@ def load_config(path: Path | None = None) -> AppConfig:
             },
         },
         "transcript_path": "artifacts/transcripts/operations.jsonl",
+        "edited_output_dir": "examples/edited",
     }
     merged = _merge_dict(defaults, raw)
     paths = SidecarPaths(**merged["sidecar"]["paths"])
     sidecar = SidecarConfig(enabled=bool(merged["sidecar"]["enabled"]), paths=paths)
+    fallback_policy = FallbackPolicy(
+        on_ooxml_unsupported=str(merged["fallback_policy"]["on_ooxml_unsupported"]),
+        on_uno_fail=str(merged["fallback_policy"]["on_uno_fail"]),
+    )
+    comment_fallback = CommentFallbackConfig(
+        enabled=bool(merged["comment_fallback"]["enabled"]),
+        template=str(merged["comment_fallback"]["template"]),
+        anchor_strategy=str(merged["comment_fallback"]["anchor_strategy"]),
+    )
     return AppConfig(
         default_author=str(merged["default_author"]),
         default_initials=str(merged["default_initials"]),
         track_changes_default=bool(merged["track_changes_default"]),
         engine_order=tuple(str(x) for x in merged["engine_order"]),
+        fidelity_mode=str(merged["fidelity_mode"]),
+        allow_paragraph_rewrite_tracked=bool(merged["allow_paragraph_rewrite_tracked"]),
+        fallback_policy=fallback_policy,
+        comment_fallback=comment_fallback,
         fidelity_profiles=tuple(str(x) for x in merged["fidelity_profiles"]),
         sidecar=sidecar,
         transcript_path=str(merged["transcript_path"]),
+        edited_output_dir=str(merged["edited_output_dir"]),
     )

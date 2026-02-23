@@ -28,6 +28,15 @@ Target corpus includes:
 - Page count must match.
 - Diff artifacts persisted under sidecar render directory.
 
+## Tracked-edit policy (Phase 2)
+- Default `fidelity_mode`: `strict`.
+- In strict mode, tracked paragraph rewrite fallback is disabled.
+- Strategy chain for unsupported OOXML localized edits:
+  1. OOXML strict attempt
+  2. UNO fallback attempt
+  3. Comment-only fallback if UNO fails (default policy)
+- Paragraph rewrite fallback in tracked mode is only allowed when explicitly enabled (for example `fidelity_mode=aggressive` or `--allow-paragraph-rewrite`).
+
 ## Interop policy
 - Linux automated checks are mandatory.
 - LibreOffice round-trip behavior is covered by render and integrity checks.

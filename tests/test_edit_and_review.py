@@ -28,7 +28,10 @@ def test_tracked_edit_defaults_to_barry_brook(sample_docx: Path) -> None:
     }
     patch_path = _write_patch(sample_docx, patch)
 
-    result = runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(patch_path), "--json"])
+    result = runner.invoke(
+        app,
+        ["edit", "apply", str(sample_docx), "--patch", str(patch_path), "--fidelity-mode", "aggressive", "--json"],
+    )
     assert result.exit_code == 0
 
     review = ooxml_engine.list_review(sample_docx)
@@ -59,6 +62,8 @@ def test_override_author_for_tracked_edit(sample_docx: Path) -> None:
             str(patch_path),
             "--author",
             "Agent Smith",
+            "--fidelity-mode",
+            "aggressive",
             "--json",
         ],
     )
@@ -90,7 +95,20 @@ def test_accept_and_reject_by_author(sample_docx: Path) -> None:
         ]
     }
 
-    runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(_write_patch(sample_docx, patch_a)), "--author", "Barry Brook"])
+    runner.invoke(
+        app,
+        [
+            "edit",
+            "apply",
+            str(sample_docx),
+            "--patch",
+            str(_write_patch(sample_docx, patch_a)),
+            "--author",
+            "Barry Brook",
+            "--fidelity-mode",
+            "aggressive",
+        ],
+    )
     runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(_write_patch(sample_docx, patch_b)), "--author", "Other Author"])
 
     result = runner.invoke(app, ["review", "accept", str(sample_docx), "--author", "Barry Brook", "--json"])

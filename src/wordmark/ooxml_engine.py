@@ -168,6 +168,74 @@ def _run_text_node_and_extras(run: etree._Element) -> tuple[etree._Element, list
     return text_nodes[0], extras
 
 
+def _run_signature(run: etree._Element) -> tuple[tuple[tuple[str, str], ...], bytes]:
+    attrs = tuple(sorted((str(k), str(v)) for k, v in run.attrib.items()))
+    rpr = run.find(_w("rPr"))
+    rpr_bytes = etree.tostring(rpr, encoding="utf-8") if rpr is not None else b""
+    return attrs, rpr_bytes
+
+
+def _safe_window_run_info(run: etree._Element) -> tuple[str, tuple[tuple[tuple[str, str], ...], bytes]] | None:
+    info = _run_text_node_and_extras(run)
+    if info is None:
+        return None
+    text_node, extras = info
+    if extras:
+        return None
+    return text_node.text or "", _run_signature(run)
+
+
+def _text_run_spans_multiple_runs(paragraph: etree._Element, find_text: str) -> bool:
+    run_texts = []
+    for run in paragraph.findall(_w("r")):
+        text_nodes = run.findall(_w("t"))
+        if len(text_nodes) != 1:
+            continue
+        run_texts.append(text_nodes[0].text or "")
+
+    if not run_texts:
+        return False
+
+    joined = "".join(run_texts)
+    offset = joined.find(find_text)
+    if offset < 0:
+        return False
+
+    start = offset
+    end = offset + len(find_text)
+    cursor = 0
+    touched = 0
+    for text in run_texts:
+        nxt = cursor + len(text)
+        if max(cursor, start) < min(nxt, end):
+            touched += 1
+        cursor = nxt
+    return touched > 1
+
+
+def _paragraph_has_risky_markup(paragraph: etree._Element) -> bool:
+    risky = {
+        _w("hyperlink"),
+        _w("instrText"),
+        _w("fldChar"),
+        _w("drawing"),
+        _w("object"),
+        _w("pict"),
+        _w("sdt"),
+        _w("smartTag"),
+        _w("tab"),
+        _w("br"),
+        _w("cr"),
+        _w("sym"),
+        _w("footnoteReference"),
+        _w("endnoteReference"),
+    }
+    for el in paragraph.iter():
+        if el.tag in risky:
+            return True
+    return False
+
+
 def _replace_text_once_localized(
     paragraph: etree._Element,
     *,
@@ -250,6 +318,86 @@ def _replace_text_once_localized(
             "new_text": replacement,
             "strategy": "localized_run",
         }
+
+    runs = paragraph.findall(_w("r"))
+    for start in range(len(runs)):
+        start_run = runs[start]
+        start_info = _safe_window_run_info(start_run)
+        if start_info is None:
+            continue
+        start_text, signature = start_info
+        parent = start_run.getparent()
+        if parent is None:
+            continue
+
+        window_runs: list[etree._Element] = [start_run]
+        window_text = start_text
+        prev_pos = parent.index(start_run)
+
+        for end in range(start + 1, len(runs)):
+            run = runs[end]
+            if run.getparent() is not parent:
+                break
+            current_pos = parent.index(run)
+            if current_pos != prev_pos + 1:
+                break
+            prev_pos = current_pos
+
+            info = _safe_window_run_info(run)
+            if info is None:
+                break
+            run_text, run_signature = info
+            if run_signature != signature:
+                break
+
+            window_runs.append(run)
+            window_text += run_text
+
+            offset = window_text.find(find_text)
+            if offset < 0:
+                continue
+
+            prefix = window_text[:offset]
+            matched = find_text
+            suffix = window_text[offset + len(find_text) :]
+            template_run = window_runs[0]
+            insert_idx = parent.index(template_run)
+
+            for window_run in window_runs:
+                parent.remove(window_run)
+
+            if track_changes:
+                if prefix:
+                    parent.insert(insert_idx, _build_run_like(template_run, prefix, tag="t"))
+                    insert_idx += 1
+
+                deleted = etree.Element(_w("del"))
+                deleted.set(_w_attr("id"), str(revision_id))
+                deleted.set(_w_attr("author"), author)
+                deleted.set(_w_attr("date"), timestamp)
+                deleted.append(_build_run_like(template_run, matched, tag="delText"))
+                parent.insert(insert_idx, deleted)
+                insert_idx += 1
+
+                inserted = etree.Element(_w("ins"))
+                inserted.set(_w_attr("id"), str(revision_id + 1))
+                inserted.set(_w_attr("author"), author)
+                inserted.set(_w_attr("date"), timestamp)
+                inserted.append(_build_run_like(template_run, replacement, tag="t"))
+                parent.insert(insert_idx, inserted)
+                insert_idx += 1
+
+                if suffix:
+                    parent.insert(insert_idx, _build_run_like(template_run, suffix, tag="t"))
+            else:
+                parent.insert(insert_idx, _build_run_like(template_run, prefix + replacement + suffix, tag="t"))
+
+            return {
+                "old_text": matched,
+                "new_text": replacement,
+                "strategy": "localized_multi_run",
+                "spanned_runs": len(window_runs),
+            }
 
     return None
 
@@ -444,6 +592,178 @@ def add_comment(
     return result
 
 
+def _find_replace_once_target(
+    paragraphs: list[etree._Element],
+    find_text: str,
+) -> tuple[int, etree._Element] | None:
+    for idx, paragraph in enumerate(paragraphs):
+        if find_text in _paragraph_text(paragraph):
+            return idx, paragraph
+    return None
+
+
+def preflight_patch(
+    path: Path,
+    *,
+    patch_data: dict[str, Any],
+    track_changes: bool,
+    allow_paragraph_rewrite_tracked: bool,
+) -> dict[str, Any]:
+    """Classify patch operations without mutating the document."""
+    operations = patch_data.get("operations")
+    if not isinstance(operations, list) or not operations:
+        raise ValueError("Patch must include non-empty 'operations' list")
+
+    pkg = DocxPackage.open(path)
+    doc_root = pkg.read_xml(DOC_PART)
+    paragraphs = doc_root.xpath(".//w:body//w:p", namespaces=NSMAP)
+    if not paragraphs:
+        raise ValueError("No paragraphs found in document body")
+
+    op_reports: list[dict[str, Any]] = []
+    summary = {
+        "safe_localized": 0,
+        "needs_multi_run_localized": 0,
+        "requires_uno": 0,
+        "unsupported_high_risk": 0,
+    }
+
+    for i, op in enumerate(operations):
+        op_type = str(op.get("type"))
+        report: dict[str, Any] = {
+            "index": i,
+            "type": op_type,
+            "classification": "",
+            "recommended_strategy": "",
+            "paragraph_index": None,
+            "reason": "",
+        }
+
+        if op_type == "replace_paragraph_text":
+            idx = int(op["paragraph_index"])
+            if idx < 0 or idx >= len(paragraphs):
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "reason": "paragraph_index_out_of_range",
+                    }
+                )
+            elif track_changes and not allow_paragraph_rewrite_tracked:
+                report.update(
+                    {
+                        "classification": "requires_uno",
+                        "recommended_strategy": "uno",
+                        "paragraph_index": idx,
+                        "reason": "tracked_paragraph_rewrite_disallowed",
+                    }
+                )
+            else:
+                report.update(
+                    {
+                        "classification": "safe_localized",
+                        "recommended_strategy": "paragraph_rewrite",
+                        "paragraph_index": idx,
+                        "reason": "explicit_paragraph_replace",
+                    }
+                )
+
+            summary[report["classification"]] += 1
+            op_reports.append(report)
+            continue
+
+        if op_type == "replace_text_once":
+            find_text = str(op["find"])
+            replacement = str(op["replace"])
+            target = _find_replace_once_target(paragraphs, find_text)
+            if target is None:
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "reason": "find_text_not_found",
+                        "find": find_text,
+                    }
+                )
+                summary[report["classification"]] += 1
+                op_reports.append(report)
+                continue
+
+            idx, paragraph = target
+            report["paragraph_index"] = idx
+            probe = _replace_text_once_localized(
+                deepcopy(paragraph),
+                find_text=find_text,
+                replacement=replacement,
+                track_changes=track_changes,
+                author="preflight",
+                revision_id=1,
+                timestamp="1970-01-01T00:00:00Z",
+            )
+            if probe is not None:
+                report.update(
+                    {
+                        "classification": "safe_localized",
+                        "recommended_strategy": str(probe.get("strategy", "localized_run")),
+                        "reason": "localized_strategy_available",
+                    }
+                )
+            elif _paragraph_has_risky_markup(paragraph):
+                report.update(
+                    {
+                        "classification": "unsupported_high_risk",
+                        "recommended_strategy": "none",
+                        "reason": "risky_markup_detected",
+                    }
+                )
+            elif _text_run_spans_multiple_runs(paragraph, find_text):
+                report.update(
+                    {
+                        "classification": "needs_multi_run_localized",
+                        "recommended_strategy": "uno" if track_changes and not allow_paragraph_rewrite_tracked else "paragraph_rewrite",
+                        "reason": "match_spans_multiple_runs",
+                    }
+                )
+            elif track_changes and not allow_paragraph_rewrite_tracked:
+                report.update(
+                    {
+                        "classification": "requires_uno",
+                        "recommended_strategy": "uno",
+                        "reason": "tracked_paragraph_rewrite_disallowed",
+                    }
+                )
+            else:
+                report.update(
+                    {
+                        "classification": "requires_uno",
+                        "recommended_strategy": "paragraph_rewrite",
+                        "reason": "localized_strategy_unavailable",
+                    }
+                )
+
+            summary[report["classification"]] += 1
+            op_reports.append(report)
+            continue
+
+        report.update(
+            {
+                "classification": "requires_uno",
+                "recommended_strategy": "uno",
+                "reason": f"unsupported_ooxml_op:{op_type}",
+            }
+        )
+        summary[report["classification"]] += 1
+        op_reports.append(report)
+
+    return {
+        "path": str(path),
+        "track_changes": track_changes,
+        "allow_paragraph_rewrite_tracked": allow_paragraph_rewrite_tracked,
+        "operations": op_reports,
+        "summary": summary,
+    }
+
+
 def apply_patch(
     path: Path,
     *,
@@ -451,6 +771,7 @@ def apply_patch(
     author: str,
     track_changes: bool,
     dry_run: bool,
+    allow_paragraph_rewrite_tracked: bool = True,
 ) -> OperationResult:
     operations = patch_data.get("operations")
     if not isinstance(operations, list) or not operations:
@@ -485,6 +806,10 @@ def apply_patch(
             if idx < 0 or idx >= len(paragraphs):
                 raise ValueError(f"paragraph_index out of range: {idx}")
             p = paragraphs[idx]
+            if track_changes and not allow_paragraph_rewrite_tracked:
+                raise OoxmlUnsupportedOperation(
+                    f"Tracked paragraph rewrite disallowed by fidelity policy at paragraph {idx}"
+                )
             expected = op.get("expected_text")
             old_text = _paragraph_text(p)
             if expected is not None and old_text != expected:
@@ -523,6 +848,11 @@ def apply_patch(
                         timestamp=timestamp,
                     )
                     if report is None:
+                        if track_changes and not allow_paragraph_rewrite_tracked:
+                            raise OoxmlUnsupportedOperation(
+                                "Localized replace unsupported and tracked paragraph rewrite disallowed "
+                                f"for find={find_text!r} at paragraph {idx}"
+                            )
                         new_text = current.replace(find_text, replacement, 1)
                         report = _replace_paragraph_content(
                             paragraph,

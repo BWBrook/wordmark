@@ -8,3 +8,6 @@ htmlcov/
 artifacts/*
 !artifacts/.gitkeep
 tmp/docs/
+examples/edited/*
+!examples/edited/.gitkeep
+!examples/edited/README.md

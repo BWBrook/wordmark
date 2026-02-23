@@ -32,6 +32,11 @@ Wordmark uses a dual-engine mutation strategy:
 - `src/wordmark/sidecar.py`: Git-friendly artifact writers.
 - `src/wordmark/transcript.py`: append-only operation audit log.
 
+Edit strategy controls:
+- policy-driven strategy routing (`strict|balanced|aggressive`)
+- preflight classification (`--preflight-only`) before mutation
+- explicit fallback chain configuration (`on_unsupported`, `on_uno_fail`)
+
 ## Data and artifacts
 - Canonical source: `.docx` files.
 - Sidecars (default under `artifacts/`):
@@ -48,11 +53,18 @@ Wordmark uses a dual-engine mutation strategy:
 - default author/initials
 - track-changes default
 - engine order
+- fidelity mode and tracked rewrite allowance
+- fallback policy and comment-fallback template
 - fidelity profiles
 - sidecar path templates
 - transcript path
+- edited output workspace path
 
 ## Known boundaries (Phase 1)
 - OOXML tracked-change edits are intentionally constrained to safe paragraph-level transforms.
 - Complex revision constructs (moves, nested field code scenarios, advanced style-preserving run surgery) are out of scope in v1.
 - Microsoft Word desktop spot-check remains a manual verification gate outside this Ubuntu environment.
+
+## Known boundaries (Phase 2)
+- Localized tracked edits now support single-run and compatible multi-run replacements.
+- Complex run graphs (hyperlinks/field codes/content controls/mixed non-text runs) are policy-routed to UNO or comment-only fallback, not silently rewritten in strict mode.

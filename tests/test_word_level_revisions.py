@@ -50,6 +50,10 @@ def test_replace_text_once_falls_back_when_match_spans_runs(tmp_path: Path) -> N
     )
 
     op = result.details["operations"][0]
-    assert op["strategy"] == "paragraph_rewrite"
-    assert op["old_text"] == "Week 1 practorial session."
-    assert op["new_text"] == "Week 1 practical session."
+    assert op["strategy"] == "localized_multi_run"
+    assert op["old_text"] == "practorial"
+    assert op["new_text"] == "practical"
+
+    review = ooxml_engine.list_review(doc_path)
+    assert [r["text"] for r in review["revisions"] if r["type"] == "ins"] == ["practical"]
+    assert [r["text"] for r in review["revisions"] if r["type"] == "del"] == ["practorial"]

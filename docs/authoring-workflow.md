@@ -6,6 +6,10 @@ uv sync --extra dev
 uv run wordmark --help
 ```
 
+## Fixture layout
+- Keep immutable baselines in `examples/canonical/`.
+- Write generated edits to `examples/edited/`.
+
 ## 1) Inspect a document
 ```bash
 uv run wordmark inspect docs/input.docx --json
@@ -56,6 +60,23 @@ Patch operations currently supported by OOXML engine:
 Fallback operation currently supported by UNO engine:
 - `replace_text_global`
 
+## Edit policy and preflight
+Preflight strategy selection without mutation:
+```bash
+uv run wordmark edit apply docs/input.docx --patch patch.json --preflight-only --json
+```
+
+Policy controls:
+```bash
+uv run wordmark edit apply docs/input.docx --patch patch.json --fidelity-mode strict --json
+uv run wordmark edit apply docs/input.docx --patch patch.json --fidelity-mode aggressive --json
+uv run wordmark edit apply docs/input.docx --patch patch.json --on-unsupported uno --on-uno-fail comment --json
+```
+
+Defaults in strict mode:
+- no tracked paragraph rewrite fallback
+- OOXML strict -> UNO -> comment-only fallback
+
 ## 4) Review operations
 List:
 ```bash
@@ -86,3 +107,19 @@ uv run wordmark render docs/input.docx --out tmp/docs/input_render --json
 ## Dry-run and auditability
 Mutating commands support `--dry-run` and always append operation metadata to:
 - `artifacts/transcripts/operations.jsonl`
+
+## Artifact cleanup
+Preview cleanup candidates:
+```bash
+uv run wordmark artifacts clean --json
+```
+
+Delete stale sidecars older than 14 days:
+```bash
+uv run wordmark artifacts clean --older-than-days 14 --apply --json
+```
+
+Delete stale sidecars while retaining transcript history:
+```bash
+uv run wordmark artifacts clean --older-than-days 14 --keep-transcripts --apply --json
+```
