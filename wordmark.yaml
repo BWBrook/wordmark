@@ -1,0 +1,18 @@
+default_author: "Barry Brook"
+default_initials: "BB"
+track_changes_default: true
+engine_order:
+  - ooxml
+  - uno
+fidelity_profiles:
+  - business-docs
+sidecar:
+  enabled: true
+  paths:
+    text: "artifacts/{stem}.text.md"
+    comments: "artifacts/{stem}.comments.json"
+    revisions: "artifacts/{stem}.revisions.json"
+    xml_manifest: "artifacts/{stem}.xml-manifest.json"
+    report: "artifacts/{stem}.report.json"
+    render_diff: "artifacts/{stem}.render"
+transcript_path: "artifacts/transcripts/operations.jsonl"

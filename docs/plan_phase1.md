@@ -1,5 +1,15 @@
 # Wordmark Feasibility + Implementation Plan (Linux, CLI-first, Word-compatible)
 
+## Execution Progress
+- [x] 1. Repository foundation
+- [x] 2. OOXML engine (primary deterministic layer)
+- [x] 3. UNO engine (fallback for complex transforms)
+- [x] 4. Review object model
+- [x] 5. Verification and quality gates
+- [x] 6. Agent workflow support
+- [x] 7. Documentation and operator UX
+- [x] Test suite + reproducible command validation
+
 ## Summary
 This is feasible on Ubuntu/WSL with your current environment.  
 You already have the core runtime stack installed (`LibreOffice 24.2.7`, `soffice`, `Pandoc 3.1.3`, `pdftoppm`, `git`, `python3`), so we can build a repo that opens/edits/saves `.docx` with comments and tracked changes while keeping Microsoft Word round-trip risk controlled through automated guardrails.
