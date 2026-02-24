@@ -28,6 +28,7 @@ uv run wordmark review accept <file.docx> --author "Barry Brook" --json
 uv run wordmark review reject <file.docx> --all --json
 uv run wordmark review prepare-merge before.docx after.docx --json
 uv run wordmark verify before.docx after.docx --profile business-docs --json
+uv run wordmark verify before.docx after.docx --profile review-edit --json
 uv run wordmark render <file.docx> --out tmp/docs/render_out --json
 uv run wordmark artifacts clean --json
 uv run wordmark artifacts clean --older-than-days 7 --apply --json
@@ -56,6 +57,8 @@ uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode aggres
 - `reason_code` and `reason_detail`
 - `detected_patterns`
 - `recommended_engine` and `recommended_strategy`
+
+UNO fallback responses now include per-operation diagnostics (`status`, `replaced_count`, `strategy_used`), and `edit apply` records deterministic low-hit retry attempts under `operation.details.uno_retry` when missed global operations are retried as targeted single replacements.
 
 ## Merge-Back Workflow
 For shared/online docs, keep agent edits in local copies and merge by human approval in Word desktop:
@@ -86,3 +89,4 @@ uv run wordmark artifacts clean --older-than-days 7 --keep-transcripts --apply -
 - track-changes default on
 - engine preference (`ooxml`, then `uno` fallback)
 - fidelity policy and fallback behavior (`strict|balanced|aggressive`, unsupported handling, UNO-fail handling)
+- verify profiles and gates (`business-docs`, `review-edit`)

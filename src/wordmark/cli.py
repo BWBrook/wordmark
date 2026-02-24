@@ -211,6 +211,41 @@ def _apply_comment_fallback(
     )
 
 
+def _build_uno_low_hit_retry_patch(uno_payload: dict[str, Any]) -> dict[str, Any] | None:
+    op_results = uno_payload.get("operation_results")
+    if not isinstance(op_results, list):
+        return None
+
+    retry_ops: list[dict[str, Any]] = []
+    for item in op_results:
+        if not isinstance(item, dict):
+            continue
+        op_type = str(item.get("type"))
+        status = str(item.get("status"))
+        requested = item.get("requested")
+        if not isinstance(requested, dict):
+            continue
+
+        # Deterministic retry policy:
+        # If a literal global replace had no hit, retry that operation once.
+        if op_type == "replace_text_global" and status == "not_found":
+            retry_op = dict(requested)
+            retry_op["type"] = "replace_text_once"
+            retry_op["occurrence"] = int(retry_op.get("occurrence", 1))
+            retry_ops.append(retry_op)
+
+    if not retry_ops:
+        return None
+    return {"operations": retry_ops}
+
+
+def _should_retry_uno_low_hit(uno_payload: dict[str, Any]) -> bool:
+    summary = uno_payload.get("summary")
+    if not isinstance(summary, dict):
+        return False
+    return int(summary.get("operations_without_hits", 0)) > 0
+
+
 def _write_review_sidecars(config: AppConfig, docx_path: Path, review_data: dict[str, Any]) -> dict[str, str]:
     if not config.sidecar.enabled:
         return {}
@@ -484,6 +519,49 @@ def edit_apply(
                         fallback_reason=fallback_reason or "ooxml unsupported",
                     )
                     attempts.append({"engine": "uno", "status": "applied"})
+
+                    uno_payload = result.details.get("uno", {})
+                    if isinstance(uno_payload, dict) and _should_retry_uno_low_hit(uno_payload) and not dry_run:
+                        retry_patch = _build_uno_low_hit_retry_patch(uno_payload)
+                        if retry_patch is not None:
+                            try:
+                                retry_result = uno_engine.apply_patch(
+                                    docx,
+                                    patch_data=retry_patch,
+                                    author=resolved_author,
+                                    track_changes=track,
+                                    dry_run=False,
+                                    fallback_reason="uno low-hit retry after initial global pass",
+                                )
+                                result.details["uno_retry"] = {
+                                    "attempted": True,
+                                    "patch": retry_patch,
+                                    "result": retry_result.details.get("uno", {}),
+                                    "author_binding_postprocess": retry_result.details.get("author_binding_postprocess"),
+                                }
+                                result.changed = bool(result.changed or retry_result.changed)
+                                attempts.append(
+                                    {
+                                        "engine": "uno",
+                                        "status": "retry_applied",
+                                        "requested_operations": len(retry_patch.get("operations", [])),
+                                        "changed": retry_result.changed,
+                                    }
+                                )
+                            except Exception as retry_exc:  # pragma: no cover - surfaced to user
+                                result.details["uno_retry"] = {
+                                    "attempted": True,
+                                    "patch": retry_patch,
+                                    "error": str(retry_exc),
+                                }
+                                attempts.append(
+                                    {
+                                        "engine": "uno",
+                                        "status": "retry_error",
+                                        "reason": str(retry_exc),
+                                    }
+                                )
+                                errors.append(f"uno_retry: {retry_exc}")
                 except Exception as exc:  # pragma: no cover - surfaced to user
                     attempts.append({"engine": "uno", "status": "error", "reason": str(exc)})
                     errors.append(f"uno: {exc}")

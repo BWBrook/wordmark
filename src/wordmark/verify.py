@@ -93,6 +93,7 @@ def _render_diff(
     before_docx: Path,
     after_docx: Path,
     threshold: float,
+    max_page_growth: int,
     *,
     persist_dir: Path | None = None,
 ) -> dict[str, Any]:
@@ -107,6 +108,9 @@ def _render_diff(
         before_pages = before_out.png_paths
         after_pages = after_out.png_paths
         page_count_match = len(before_pages) == len(after_pages)
+        page_growth = len(after_pages) - len(before_pages)
+        page_growth_ok = page_growth >= 0 and page_growth <= max_page_growth
+        page_count_ok = page_count_match or page_growth_ok
 
         diffs: list[dict[str, Any]] = []
         pair_count = min(len(before_pages), len(after_pages))
@@ -135,11 +139,15 @@ def _render_diff(
                 }
             )
 
-        pass_all = page_count_match and all(item["pass"] for item in diffs)
+        pass_all = page_count_ok and all(item["pass"] for item in diffs)
         return {
             "ok": pass_all,
             "threshold": threshold,
+            "max_page_growth": max_page_growth,
             "page_count_match": page_count_match,
+            "page_growth": page_growth,
+            "page_growth_ok": page_growth_ok,
+            "page_count_ok": page_count_ok,
             "before_pages": len(before_pages),
             "after_pages": len(after_pages),
             "per_page": diffs,
@@ -156,6 +164,11 @@ def verify_docx(
 ) -> VerifyResult:
     if profile not in config.fidelity_profiles:
         raise ValueError(f"Unknown fidelity profile {profile!r}; configured={config.fidelity_profiles}")
+    profile_settings = config.fidelity_profile_settings.get(profile)
+    if profile_settings is None:
+        raise ValueError(
+            f"Missing profile settings for {profile!r}; configured={tuple(sorted(config.fidelity_profile_settings.keys()))}"
+        )
 
     before_pkg = DocxPackage.open(before)
     after_pkg = DocxPackage.open(after)
@@ -177,11 +190,30 @@ def verify_docx(
     before_revs = _revision_stats(before_pkg)
     after_revs = _revision_stats(after_pkg)
 
-    threshold = 0.02 if profile == "business-docs" else 0.05
-    render_diff = _render_diff(before, after, threshold, persist_dir=persist_render_dir)
+    threshold = float(profile_settings.render_diff_threshold)
+    max_page_growth = int(profile_settings.max_page_growth)
+    render_diff = _render_diff(
+        before,
+        after,
+        threshold,
+        max_page_growth,
+        persist_dir=persist_render_dir,
+    )
+    profile_reasoning = {
+        "profile": profile,
+        "render_diff_threshold": threshold,
+        "max_page_growth": max_page_growth,
+        "intent": (
+            "strict release-quality gate for business documents"
+            if profile == "business-docs"
+            else "review-oriented gate for iterative tracked-edit/comment workflows"
+        ),
+        "pass_rule": "comment_integrity.ok and render_diff.ok",
+    }
 
     checks = {
         "profile": profile,
+        "profile_reasoning": profile_reasoning,
         "manifest": manifest,
         "comment_integrity": comment_integrity,
         "revisions": {

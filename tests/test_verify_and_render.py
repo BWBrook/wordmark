@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import shutil
+from types import SimpleNamespace
 from pathlib import Path
+
+from PIL import Image
 
 from wordmark.config import load_config
 from wordmark.render import render_docx
+from wordmark import verify as verify_mod
 from wordmark.verify import verify_docx
 
 
@@ -47,3 +51,50 @@ def test_verify_can_persist_render_artifacts(sample_docx: Path, tmp_path: Path) 
     assert any(render_dir.glob("before-page-*.png"))
     assert any(render_dir.glob("after-page-*.png"))
     assert any(render_dir.glob("diff-page-*.png"))
+
+
+def test_render_diff_page_growth_tolerance(monkeypatch, sample_docx: Path, tmp_path: Path) -> None:  # noqa: ANN001
+    before = tmp_path / "before.docx"
+    after = tmp_path / "after.docx"
+    shutil.copy2(sample_docx, before)
+    shutil.copy2(sample_docx, after)
+
+    render_root = tmp_path / "fake-render"
+    before_pages = [render_root / "before-1.png", render_root / "before-2.png"]
+    after_pages = [render_root / "after-1.png", render_root / "after-2.png", render_root / "after-3.png"]
+    for page in before_pages + after_pages:
+        page.parent.mkdir(parents=True, exist_ok=True)
+        img = Image.new("RGB", (16, 16), color=(255, 255, 255))
+        img.save(page)
+
+    def fake_render(docx: Path, _out: Path):  # noqa: ANN001
+        if docx == before:
+            return SimpleNamespace(png_paths=before_pages)
+        return SimpleNamespace(png_paths=after_pages)
+
+    monkeypatch.setattr(verify_mod, "render_docx", fake_render)
+
+    strict = verify_mod._render_diff(before, after, threshold=0.02, max_page_growth=0)
+    assert strict["ok"] is False
+    assert strict["page_growth"] == 1
+    assert strict["page_growth_ok"] is False
+
+    tolerant = verify_mod._render_diff(before, after, threshold=0.02, max_page_growth=2)
+    assert tolerant["ok"] is True
+    assert tolerant["page_growth"] == 1
+    assert tolerant["page_growth_ok"] is True
+
+
+def test_verify_review_edit_profile_reasoning(sample_docx: Path, tmp_path: Path) -> None:
+    before = tmp_path / "before.docx"
+    after = tmp_path / "after.docx"
+    shutil.copy2(sample_docx, before)
+    shutil.copy2(sample_docx, after)
+
+    cfg = load_config(Path("wordmark.yaml"))
+    result = verify_docx(before, after, profile="review-edit", config=cfg)
+    assert result.passed
+    reasoning = result.checks["profile_reasoning"]
+    assert reasoning["profile"] == "review-edit"
+    assert reasoning["render_diff_threshold"] == 0.12
+    assert reasoning["max_page_growth"] == 2

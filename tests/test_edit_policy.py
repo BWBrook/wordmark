@@ -7,6 +7,7 @@ import pytest
 from typer.testing import CliRunner
 
 from wordmark.cli import app
+from wordmark.models import OperationResult
 from wordmark import ooxml_engine
 from wordmark import uno_engine
 
@@ -110,3 +111,78 @@ def test_strict_mode_fail_policy_exits_nonzero(sample_docx: Path, monkeypatch: p
     review = ooxml_engine.list_review(sample_docx)
     assert review["revisions"] == []
     assert review["comments"] == []
+
+
+def test_uno_low_hit_retry_is_reported(sample_docx: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_global",
+                "find": "not-present-long-form",
+                "replace": "present-short-form",
+            }
+        ]
+    }
+    patch_path = _write_patch(sample_docx, patch)
+
+    calls: list[dict[str, object]] = []
+
+    def fake_uno_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        patch_data = kwargs["patch_data"]
+        calls.append(patch_data)
+        if len(calls) == 1:
+            return OperationResult.now(
+                command="edit apply",
+                path=sample_docx,
+                engine="uno",
+                changed=False,
+                author="Barry Brook",
+                details={
+                    "uno": {
+                        "summary": {"requested_operations": 1, "operations_with_hits": 0, "operations_without_hits": 1},
+                        "operation_results": [
+                            {
+                                "index": 0,
+                                "type": "replace_text_global",
+                                "status": "not_found",
+                                "replaced_count": 0,
+                                "requested": patch["operations"][0],
+                            }
+                        ],
+                    }
+                },
+            )
+
+        assert patch_data["operations"][0]["type"] == "replace_text_once"
+        assert patch_data["operations"][0]["occurrence"] == 1
+        return OperationResult.now(
+            command="edit apply",
+            path=sample_docx,
+            engine="uno",
+            changed=True,
+            author="Barry Brook",
+            details={
+                "uno": {
+                    "summary": {"requested_operations": 1, "operations_with_hits": 1, "operations_without_hits": 0},
+                    "operation_results": [
+                        {
+                            "index": 0,
+                            "type": "replace_text_once",
+                            "status": "applied",
+                            "replaced_count": 1,
+                            "requested": patch_data["operations"][0],
+                        }
+                    ],
+                }
+            },
+        )
+
+    monkeypatch.setattr(uno_engine, "apply_patch", fake_uno_apply_patch)
+
+    result = runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(patch_path), "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["operation"]["details"]["uno_retry"]["attempted"] is True
+    assert payload["operation"]["details"]["uno_retry"]["patch"]["operations"][0]["type"] == "replace_text_once"
+    assert any(item["status"] == "retry_applied" for item in payload["attempts"])

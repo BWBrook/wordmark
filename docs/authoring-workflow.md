@@ -76,6 +76,8 @@ Patch operations currently supported by OOXML engine:
 
 Fallback operation currently supported by UNO engine:
 - `replace_text_global`
+- `replace_text_once`
+- `replace_paragraph_text` (matched by `expected_text`)
 
 ## Edit policy and preflight
 Preflight strategy selection without mutation:
@@ -83,6 +85,7 @@ Preflight strategy selection without mutation:
 uv run wordmark edit apply docs/input.docx --patch patch.json --preflight-only --json
 ```
 Preflight JSON includes `reason_code`, `reason_detail`, `detected_patterns`, `recommended_engine`, and `recommended_strategy`.
+UNO fallback JSON includes per-operation diagnostics (`status`, `replaced_count`, `strategy_used`) and may include `uno_retry` metadata if low-hit global operations are retried as targeted single replacements.
 
 Policy controls:
 ```bash
@@ -118,6 +121,7 @@ See `docs/release_gate_word_desktop.md` for the manual release checklist.
 ## 5) Fidelity verification
 ```bash
 uv run wordmark verify docs/before.docx docs/after.docx --profile business-docs --json
+uv run wordmark verify docs/before.docx docs/after.docx --profile review-edit --json
 ```
 `verify` runs:
 - OOXML integrity checks

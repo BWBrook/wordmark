@@ -1,9 +1,9 @@
-# Fidelity Policy (Phase 3)
+# Fidelity Policy (Phase 4)
 
 ## Scope
-This policy defines acceptance gates for Linux-native `.docx` review edits under the `business-docs` profile.
+This policy defines acceptance gates for Linux-native `.docx` review edits.
 
-## Profile: `business-docs`
+## Profile: `business-docs` (strict)
 Target corpus includes:
 - headings and normal paragraphs
 - lists
@@ -11,24 +11,32 @@ Target corpus includes:
 - inline images
 - comments and tracked revisions
 
-## Automated gates
-1. Package/OOXML integrity
-- DOCX ZIP remains readable.
-- Key OOXML parts parse successfully.
+Automated gates:
+1. Package/OOXML integrity.
+2. Comment-reference integrity.
+3. Revision accounting.
+4. Render diff gate with strict limits:
+- threshold: `0.02`
+- page growth allowance: `0`
+- page count must remain unchanged
 
-2. Comment-reference integrity
-- No orphan document comment references (`commentReference`/range IDs without matching comments).
+Use case:
+- release-quality checks where layout drift risk must be tightly constrained.
 
-3. Revision accounting
-- Report before/after revision counts (`w:ins`, `w:del`) and deltas.
+## Profile: `review-edit` (iterative)
+Automated gates:
+1. Package/OOXML integrity.
+2. Comment-reference integrity.
+3. Revision accounting.
+4. Render diff gate with review-focused tolerance:
+- threshold: `0.12`
+- page growth allowance: `2`
+- bounded growth allowed for active tracked-edit rounds
 
-4. Render diff gate
-- DOCX -> PDF -> PNG conversion for before/after.
-- Per-page diff ratio threshold for `business-docs`: `0.02`.
-- Page count must match.
-- Diff artifacts persisted under sidecar render directory.
+Use case:
+- supervisor/author iteration loops where many edits/comments are expected and strict release invariance is premature.
 
-## Tracked-edit policy (Phase 2)
+## Tracked-edit policy
 - Default `fidelity_mode`: `strict`.
 - In strict mode, tracked paragraph rewrite fallback is disabled.
 - Strategy chain for unsupported OOXML localized edits:
@@ -37,7 +45,7 @@ Target corpus includes:
   3. Comment-only fallback if UNO fails (default policy)
 - Paragraph rewrite fallback in tracked mode is only allowed when explicitly enabled (for example `fidelity_mode=aggressive` or `--allow-paragraph-rewrite`).
 
-## Hard-pattern policy (Phase 3)
+## Hard-pattern policy
 - Canonical risky-markup fixtures are maintained under `examples/canonical/hard_patterns/`.
 - Preflight output must include per-operation:
   - `reason_code`
@@ -45,9 +53,14 @@ Target corpus includes:
   - `detected_patterns`
   - `recommended_engine`
   - `recommended_strategy`
-- In strict mode, risky-markup paragraphs (for example hyperlinks, field codes, content controls, run-break constructs) are treated as unsupported/high-risk and routed to fallback policy.
+- In strict mode, risky-markup paragraphs (for example hyperlinks, field codes, content controls, run-break/tab constructs) are treated as unsupported/high-risk and routed to fallback policy.
 
-## Anchor policy (Phase 3)
+## UNO fallback reliability policy
+- UNO output must remain auditable through `operation_results` diagnostics.
+- If global replacements miss, CLI may perform one deterministic retry by converting missed `replace_text_global` operations to `replace_text_once`.
+- Retry metadata must be recorded under operation details; no silent strategy changes.
+
+## Anchor policy
 - Preferred anchor model is paragraph+context:
   - `paragraph_index`
   - `expected_text`
@@ -64,13 +77,9 @@ Target corpus includes:
 - LibreOffice round-trip behavior is covered by render and integrity checks.
 - Microsoft Word desktop round-trip spot-check remains a manual release gate for high-risk documents.
 
-## Known non-goals in Phase 1
-- Full parity across every advanced OOXML revision pattern.
-- Guaranteed layout identity for all arbitrary template families.
-
 ## Escalation rules
 Escalate to manual review when:
 - render diff gate fails,
 - comment/reference integrity fails,
-- UNO fallback mutates unexpected regions,
-- document complexity exceeds Phase 1 supported operation patterns.
+- UNO fallback yields unexpectedly low hit rates,
+- document complexity exceeds supported operation patterns.

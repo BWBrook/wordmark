@@ -68,3 +68,21 @@
 - Context: Team requirement is no direct automated write-back to shared online files without human review.
 - Decision: Add explicit desktop merge-back SOP and a non-mutating CLI handoff helper (`review prepare-merge`) that prepares checklist/report metadata.
 - Consequences: Shared-doc updates remain human-approved; merge process is repeatable and documented.
+
+## 2026-02-24 - ADR-012: Split verify gates into strict and review-oriented profiles
+- Status: accepted
+- Context: Advanced mixed-content review passes can legitimately increase page count and produce broader visual diffs, while release-quality checks still require strict invariance.
+- Decision: Keep `business-docs` strict (`threshold=0.02`, no page growth) and add `review-edit` (`threshold=0.12`, page growth up to 2) with explicit `profile_reasoning` in verify output.
+- Consequences: Iterative supervisory review can proceed with bounded tolerance while preserving a strict release gate for final sign-off.
+
+## 2026-02-24 - ADR-013: Deterministic UNO low-hit retry with explicit diagnostics
+- Status: accepted
+- Context: Long literal global replacements in complex documents can under-hit in LibreOffice UNO, reducing edit throughput and requiring manual rework.
+- Decision: Extend UNO diagnostics to per-operation results and add one deterministic retry pass that converts missed `replace_text_global` operations into `replace_text_once` operations; record retry metadata in operation details.
+- Consequences: Better automatic recovery for partial misses without hidden heuristics; operators can audit retry behavior and outcomes in JSON sidecars/transcripts.
+
+## 2026-02-24 - ADR-014: Normalize newly introduced `Unknown Author` UNO revisions
+- Status: accepted
+- Context: LibreOffice UNO may emit tracked revisions with `Unknown Author`, reducing attribution fidelity in review workflows.
+- Decision: After UNO tracked-change writes, detect newly introduced revisions and rewrite unresolved author fields to the requested actor label.
+- Consequences: Improved attribution consistency for downstream review/accept-reject operations while preserving pre-existing revision history.

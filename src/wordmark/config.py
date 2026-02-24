@@ -42,6 +42,12 @@ class CommentFallbackConfig:
 
 
 @dataclass(slots=True)
+class FidelityProfileConfig:
+    render_diff_threshold: float = 0.02
+    max_page_growth: int = 0
+
+
+@dataclass(slots=True)
 class AppConfig:
     default_author: str = "Barry Brook"
     default_initials: str = "BB"
@@ -52,6 +58,12 @@ class AppConfig:
     fallback_policy: FallbackPolicy = field(default_factory=FallbackPolicy)
     comment_fallback: CommentFallbackConfig = field(default_factory=CommentFallbackConfig)
     fidelity_profiles: tuple[str, ...] = ("business-docs",)
+    fidelity_profile_settings: dict[str, FidelityProfileConfig] = field(
+        default_factory=lambda: {
+            "business-docs": FidelityProfileConfig(render_diff_threshold=0.02, max_page_growth=0),
+            "review-edit": FidelityProfileConfig(render_diff_threshold=0.12, max_page_growth=2),
+        }
+    )
     sidecar: SidecarConfig = field(default_factory=SidecarConfig)
     transcript_path: str = "artifacts/transcripts/operations.jsonl"
     edited_output_dir: str = "examples/edited"
@@ -95,7 +107,17 @@ def load_config(path: Path | None = None) -> AppConfig:
             ),
             "anchor_strategy": "best-effort-match",
         },
-        "fidelity_profiles": ["business-docs"],
+        "fidelity_profiles": ["business-docs", "review-edit"],
+        "fidelity_profile_settings": {
+            "business-docs": {
+                "render_diff_threshold": 0.02,
+                "max_page_growth": 0,
+            },
+            "review-edit": {
+                "render_diff_threshold": 0.12,
+                "max_page_growth": 2,
+            },
+        },
         "sidecar": {
             "enabled": True,
             "paths": {
@@ -122,6 +144,21 @@ def load_config(path: Path | None = None) -> AppConfig:
         template=str(merged["comment_fallback"]["template"]),
         anchor_strategy=str(merged["comment_fallback"]["anchor_strategy"]),
     )
+    profile_names = tuple(str(x) for x in merged["fidelity_profiles"])
+    raw_profile_settings = merged.get("fidelity_profile_settings", {})
+    if not isinstance(raw_profile_settings, dict):
+        raise ValueError("fidelity_profile_settings must be an object mapping profile names to config")
+
+    profile_settings: dict[str, FidelityProfileConfig] = {}
+    for profile_name in profile_names:
+        raw_settings = raw_profile_settings.get(profile_name, {})
+        if not isinstance(raw_settings, dict):
+            raise ValueError(f"fidelity_profile_settings.{profile_name} must be an object")
+        profile_settings[profile_name] = FidelityProfileConfig(
+            render_diff_threshold=float(raw_settings.get("render_diff_threshold", 0.02)),
+            max_page_growth=int(raw_settings.get("max_page_growth", 0)),
+        )
+
     return AppConfig(
         default_author=str(merged["default_author"]),
         default_initials=str(merged["default_initials"]),
@@ -131,7 +168,8 @@ def load_config(path: Path | None = None) -> AppConfig:
         allow_paragraph_rewrite_tracked=bool(merged["allow_paragraph_rewrite_tracked"]),
         fallback_policy=fallback_policy,
         comment_fallback=comment_fallback,
-        fidelity_profiles=tuple(str(x) for x in merged["fidelity_profiles"]),
+        fidelity_profiles=profile_names,
+        fidelity_profile_settings=profile_settings,
         sidecar=sidecar,
         transcript_path=str(merged["transcript_path"]),
         edited_output_dir=str(merged["edited_output_dir"]),

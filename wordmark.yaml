@@ -15,6 +15,14 @@ comment_fallback:
   anchor_strategy: "best-effort-match"
 fidelity_profiles:
   - business-docs
+  - review-edit
+fidelity_profile_settings:
+  business-docs:
+    render_diff_threshold: 0.02
+    max_page_growth: 0
+  review-edit:
+    render_diff_threshold: 0.12
+    max_page_growth: 2
 sidecar:
   enabled: true
   paths:

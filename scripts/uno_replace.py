@@ -43,19 +43,192 @@ def _supports_track_changes(doc: Any) -> bool:
     return hasattr(doc, "RecordChanges")
 
 
-def _apply_replace_ops(doc: Any, operations: list[dict[str, Any]]) -> int:
-    total = 0
-    for op in operations:
-        if op.get("type") != "replace_text_global":
-            raise ValueError(f"UNO helper only supports replace_text_global; got {op.get('type')!r}")
+def _configure_track_changes(doc: Any, *, track_changes: bool) -> dict[str, Any]:
+    status = {
+        "requested": bool(track_changes),
+        "supported": _supports_track_changes(doc),
+        "enabled": False,
+        "show_tracked_changes": None,
+    }
+
+    if track_changes and status["supported"]:
+        doc.RecordChanges = True
+        status["enabled"] = bool(getattr(doc, "RecordChanges", False))
+
+    if hasattr(doc, "CurrentController") and hasattr(doc.CurrentController, "ViewSettings"):
+        view = doc.CurrentController.ViewSettings
+        if hasattr(view, "ShowTrackedChanges"):
+            view.ShowTrackedChanges = True
+            status["show_tracked_changes"] = bool(getattr(view, "ShowTrackedChanges", True))
+
+    return status
+
+
+def _bind_author_metadata(doc: Any, *, author: str) -> dict[str, Any]:
+    status = {
+        "requested_author": author,
+        "document_properties_supported": False,
+        "author_before": None,
+        "author_after": None,
+        "set_author_ok": False,
+        "error": None,
+    }
+
+    try:
+        properties = doc.getDocumentProperties()
+    except Exception as exc:
+        status["error"] = str(exc)
+        return status
+
+    status["document_properties_supported"] = True
+    status["author_before"] = getattr(properties, "Author", None)
+
+    try:
+        properties.Author = author
+        properties.ModifiedBy = author
+        status["author_after"] = getattr(properties, "Author", None)
+        status["set_author_ok"] = status["author_after"] == author
+    except Exception as exc:
+        status["error"] = str(exc)
+
+    return status
+
+
+def _find_nth_occurrence(doc: Any, descriptor: Any, *, occurrence: int) -> tuple[Any | None, int]:
+    found = doc.findFirst(descriptor)
+    if not found:
+        return None, 0
+
+    matched = 1
+    while matched < occurrence:
+        found = doc.findNext(found.getEnd(), descriptor)
+        if not found:
+            return None, matched
+        matched += 1
+
+    return found, matched
+
+
+def _replace_text_global(doc: Any, *, find_text: str, replacement: str) -> dict[str, Any]:
+    descriptor = doc.createReplaceDescriptor()
+    descriptor.SearchString = find_text
+    descriptor.ReplaceString = replacement
+    replaced = int(doc.replaceAll(descriptor))
+
+    return {
+        "status": "applied" if replaced > 0 else "not_found",
+        "strategy_used": "replace_text_global",
+        "replaced_count": replaced,
+    }
+
+
+def _replace_text_once(doc: Any, *, find_text: str, replacement: str, occurrence: int) -> dict[str, Any]:
+    if occurrence < 1:
+        raise ValueError(f"replace_text_once occurrence must be >= 1; got {occurrence}")
+
+    descriptor = doc.createSearchDescriptor()
+    descriptor.SearchString = find_text
+
+    target, matched = _find_nth_occurrence(doc, descriptor, occurrence=occurrence)
+    if target is None:
+        return {
+            "status": "not_found",
+            "strategy_used": "replace_text_once",
+            "replaced_count": 0,
+            "matched_occurrences": matched,
+            "requested_occurrence": occurrence,
+        }
+
+    target.setString(replacement)
+    return {
+        "status": "applied",
+        "strategy_used": "replace_text_once",
+        "replaced_count": 1,
+        "matched_occurrences": matched,
+        "requested_occurrence": occurrence,
+    }
+
+
+def _apply_operation(doc: Any, op: dict[str, Any]) -> dict[str, Any]:
+    op_type = str(op.get("type"))
+
+    if op_type == "replace_text_global":
         find_text = str(op["find"])
         replacement = str(op["replace"])
-        descriptor = doc.createReplaceDescriptor()
-        descriptor.SearchString = find_text
-        descriptor.ReplaceString = replacement
-        replaced = int(doc.replaceAll(descriptor))
+        details = _replace_text_global(doc, find_text=find_text, replacement=replacement)
+        details.update(
+            {
+                "type": op_type,
+                "find": find_text,
+                "replace": replacement,
+            }
+        )
+        return details
+
+    if op_type == "replace_text_once":
+        find_text = str(op["find"])
+        replacement = str(op["replace"])
+        occurrence = int(op.get("occurrence", 1))
+        details = _replace_text_once(
+            doc,
+            find_text=find_text,
+            replacement=replacement,
+            occurrence=occurrence,
+        )
+        details.update(
+            {
+                "type": op_type,
+                "find": find_text,
+                "replace": replacement,
+                "occurrence": occurrence,
+            }
+        )
+        return details
+
+    if op_type == "replace_paragraph_text":
+        expected_text = op.get("expected_text")
+        if expected_text is None:
+            raise ValueError("UNO replace_paragraph_text requires expected_text for fallback matching")
+        replacement = str(op.get("new_text", ""))
+        occurrence = int(op.get("occurrence", 1))
+        details = _replace_text_once(
+            doc,
+            find_text=str(expected_text),
+            replacement=replacement,
+            occurrence=occurrence,
+        )
+        details.update(
+            {
+                "type": op_type,
+                "find": str(expected_text),
+                "replace": replacement,
+                "occurrence": occurrence,
+                "strategy_used": "replace_paragraph_text_once",
+            }
+        )
+        return details
+
+    raise ValueError(f"Unsupported UNO operation type: {op_type!r}")
+
+
+def _apply_replace_ops(doc: Any, operations: list[dict[str, Any]]) -> tuple[int, list[dict[str, Any]]]:
+    total = 0
+    operation_results: list[dict[str, Any]] = []
+
+    for index, op in enumerate(operations):
+        result = _apply_operation(doc, op)
+        replaced = int(result.get("replaced_count", 0))
         total += replaced
-    return total
+        operation_results.append(
+            {
+                "index": index,
+                "type": str(op.get("type")),
+                "requested": op,
+                **result,
+            }
+        )
+
+    return total, operation_results
 
 
 def run(docx_path: Path, patch_data: dict[str, Any], author: str, track_changes: bool) -> dict[str, Any]:
@@ -85,14 +258,10 @@ def run(docx_path: Path, patch_data: dict[str, Any], author: str, track_changes:
             file_url = uno.systemPathToFileUrl(str(docx_path.resolve()))
             doc = desktop.loadComponentFromURL(file_url, "_blank", 0, tuple())
 
-            if track_changes and _supports_track_changes(doc):
-                doc.RecordChanges = True
-            if hasattr(doc, "CurrentController") and hasattr(doc.CurrentController, "ViewSettings"):
-                view = doc.CurrentController.ViewSettings
-                if hasattr(view, "ShowTrackedChanges"):
-                    view.ShowTrackedChanges = True
+            track_status = _configure_track_changes(doc, track_changes=track_changes)
+            author_binding = _bind_author_metadata(doc, author=author)
 
-            replaced_count = _apply_replace_ops(doc, operations)
+            replaced_count, operation_results = _apply_replace_ops(doc, operations)
             props = (_prop("FilterName", "MS Word 2007 XML"),)
             doc.storeToURL(file_url, props)
             if hasattr(doc, "close"):
@@ -101,12 +270,23 @@ def run(docx_path: Path, patch_data: dict[str, Any], author: str, track_changes:
             if hasattr(desktop, "terminate"):
                 desktop.terminate()
 
+            operations_with_hits = sum(1 for item in operation_results if int(item.get("replaced_count", 0)) > 0)
+            operations_without_hits = len(operation_results) - operations_with_hits
+
             return {
                 "changed": replaced_count > 0,
                 "replaced_count": replaced_count,
                 "author": author,
                 "track_changes": bool(track_changes),
+                "track_changes_status": track_status,
+                "author_binding_status": author_binding,
                 "operations": operations,
+                "operation_results": operation_results,
+                "summary": {
+                    "requested_operations": len(operations),
+                    "operations_with_hits": operations_with_hits,
+                    "operations_without_hits": operations_without_hits,
+                },
             }
         finally:
             try:

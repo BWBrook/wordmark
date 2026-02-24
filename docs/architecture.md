@@ -1,4 +1,4 @@
-# Wordmark Architecture (Phase 3)
+# Wordmark Architecture (Phase 4)
 
 ## Objective
 Provide a Linux-first, CLI-first workflow for editing `.docx` review state (comments + tracked changes) with controlled formatting risk and Git-friendly artifacts.
@@ -9,15 +9,15 @@ Wordmark uses a dual-engine mutation strategy:
 1. OOXML engine (`src/wordmark/ooxml_engine.py`)
 - First-choice deterministic engine.
 - Operates directly on DOCX package parts (`word/document.xml`, `word/comments.xml`, rels, content types).
-- Supports safe operations in v1:
+- Supports safe operations:
   - comment insertion
   - paragraph-level tracked text replacement
   - targeted single replace
   - revision accept/reject by author/all
-- Supports phase-3 anchor resolution model:
+- Supports anchor resolution model:
   - selector compatibility (`p:<index>`, `text:<snippet>`)
   - paragraph+context anchor object (`paragraph_index`, `expected_text`, `context_before`, `context_after`, `occurrence`)
-- Emits richer preflight diagnostics:
+- Emits preflight diagnostics:
   - reason code/detail
   - detected risky patterns
   - recommended engine/strategy
@@ -26,16 +26,24 @@ Wordmark uses a dual-engine mutation strategy:
 2. UNO fallback engine (`src/wordmark/uno_engine.py` + `scripts/uno_replace.py`)
 - Used for unsupported/high-risk patch operations.
 - Delegates to system Python UNO bindings (`/usr/bin/python3`) and headless LibreOffice.
-- Currently supports `replace_text_global` operations.
-- Records fallback reason and engine choice in operation report metadata.
+- Supports fallback operations:
+  - `replace_text_global`
+  - `replace_text_once` (with optional occurrence)
+  - `replace_paragraph_text` (matched via `expected_text`)
+- Emits per-operation diagnostics:
+  - `status`
+  - `replaced_count`
+  - `strategy_used`
+- Emits author-binding diagnostics and runs post-write normalization for newly introduced `Unknown Author` revisions.
+- Records fallback reason and optional low-hit retry metadata in operation details.
 
 ## Core modules
 - `src/wordmark/cli.py`: command surface and engine orchestration.
 - `src/wordmark/docx_package.py`: byte-preserving OOXML ZIP access.
 - `src/wordmark/ooxml_engine.py`: inspect/comment/edit/review operations.
-- `src/wordmark/uno_engine.py`: fallback bridge and error surfacing.
+- `src/wordmark/uno_engine.py`: UNO bridge, diagnostics, and author post-processing.
 - `src/wordmark/render.py`: DOCX -> PDF -> PNG rendering.
-- `src/wordmark/verify.py`: integrity and render-diff quality gates.
+- `src/wordmark/verify.py`: integrity and profile-aware render-diff quality gates.
 - `src/wordmark/sidecar.py`: Git-friendly artifact writers.
 - `src/wordmark/transcript.py`: append-only operation audit log.
 - `examples/canonical/hard_patterns/`: canonical risky-markup fixture corpus.
@@ -44,6 +52,7 @@ Edit strategy controls:
 - policy-driven strategy routing (`strict|balanced|aggressive`)
 - preflight classification (`--preflight-only`) before mutation
 - explicit fallback chain configuration (`on_unsupported`, `on_uno_fail`)
+- deterministic UNO low-hit retry for missed global replacements
 - merge-back helper output (`review prepare-merge`) for Word desktop handoff
 
 ## Data and artifacts
@@ -64,20 +73,13 @@ Edit strategy controls:
 - engine order
 - fidelity mode and tracked rewrite allowance
 - fallback policy and comment-fallback template
-- fidelity profiles
+- fidelity profiles and profile settings (threshold/page-growth)
 - sidecar path templates
 - transcript path
 - edited output workspace path
 
-## Known boundaries (Phase 1)
-- OOXML tracked-change edits are intentionally constrained to safe paragraph-level transforms.
-- Complex revision constructs (moves, nested field code scenarios, advanced style-preserving run surgery) are out of scope in v1.
-- Microsoft Word desktop spot-check remains a manual verification gate outside this Ubuntu environment.
-
-## Known boundaries (Phase 2)
-- Localized tracked edits now support single-run and compatible multi-run replacements.
-- Complex run graphs (hyperlinks/field codes/content controls/mixed non-text runs) are policy-routed to UNO or comment-only fallback, not silently rewritten in strict mode.
-
-## Known boundaries (Phase 3)
+## Known boundaries
 - Word desktop compare/combine remains a human-driven release action.
 - CLI intentionally does not write directly to cloud-hosted shared documents.
+- UNO matching still relies on LibreOffice literal search behavior; phrase-level, context-aware patches remain preferred over long full-paragraph literals.
+- `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
