@@ -86,3 +86,15 @@
 - Context: LibreOffice UNO may emit tracked revisions with `Unknown Author`, reducing attribution fidelity in review workflows.
 - Decision: After UNO tracked-change writes, detect newly introduced revisions and rewrite unresolved author fields to the requested actor label.
 - Consequences: Improved attribution consistency for downstream review/accept-reject operations while preserving pre-existing revision history.
+
+## 2026-02-24 - ADR-015: Serialize mutating DOCX commands with per-file lock
+- Status: accepted
+- Context: Parallel edit operations targeting the same `.docx` can trigger LibreOffice UNO write collisions (`SfxBaseModel::impl_store ... Write Code:12`) and degrade to comment fallback unexpectedly.
+- Decision: Add an exclusive per-document lock (`<file>.docx.wordmark.lock`) around mutating CLI commands (`comment add`, `edit apply`, `review accept`, `review reject`) so concurrent processes queue instead of racing writes.
+- Consequences: Eliminates a reproducible concurrency failure mode while preserving current fallback behavior for genuine UNO failures.
+
+## 2026-02-24 - ADR-016: Minimal tracked-change delta for localized replacements
+- Status: accepted
+- Context: Replacing a phrase for tiny edits (for example `73% studies` -> `73% of studies`, `bird specific` -> `bird-specific`) previously produced full-span delete/insert revisions, reducing review fidelity.
+- Decision: For localized tracked replacements, compute common prefix/suffix and emit only middle-segment `w:del`/`w:ins` deltas; for `replace_paragraph_text`, attempt localized full-string replacement before paragraph rewrite fallback.
+- Consequences: Word review view now shows concise, intent-aligned edits (insertions/hyphen swaps/tail appends) in many cases, with paragraph rewrite still available as fallback when localization is unsafe.

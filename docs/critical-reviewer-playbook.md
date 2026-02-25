@@ -25,6 +25,7 @@ Typical supervisor-level comment themes:
 2. Prefer OOXML-safe localized operations first.
 3. Keep strict policy defaults unless task context explicitly justifies broader edits.
 4. Preserve transcript and sidecars for auditability.
+5. Run one mutating workflow per target file; Wordmark serializes writes with `<docx>.wordmark.lock`.
 
 ## Language convention
 When acting in editor/reviewer role, prefer British English spelling by default unless the user or target journal style guide requests otherwise.
@@ -67,13 +68,20 @@ uv run wordmark render <after.docx> --out tmp/docs/review_render --json
 ## Edit strategy guidance
 Use these operation patterns deliberately:
 - `replace_text_once`: preferred for precise word/phrase edits.
-- `replace_paragraph_text`: use only when genuine paragraph rewrite is intended.
+- `replace_paragraph_text`: now tries localized full-string replacement first; keep for genuine sentence/paragraph rewrites, not trivial token fixes.
 - `replace_text_global`: useful for repeated terminology normalization, but verify hit counts and review context.
 
 When authoring patches:
 1. Start narrow: phrase-level replacements outperform long literal paragraph strings for reliability.
 2. Add anchor context when ambiguity is plausible (`expected_text`, `context_before`, `context_after`, `occurrence`).
 3. For repeated tokens, specify `occurrence` where available.
+
+Fidelity heuristics for reviewer-style edits:
+1. For tiny clause fixes, target only the minimum phrase to preserve concise tracked deltas.
+2. For append-at-end edits (for example adding a short instruction after an existing phrase), prefer a localized replacement that keeps the original prefix unchanged so Word displays an insertion, not full-span replacement.
+3. For punctuation/hyphenation fixes (`bird specific` -> `bird-specific`), use focused replacement operations to keep revision scope minimal.
+4. Use comments rather than inserted text when the action belongs to the student (for example placeholder checks like keyword/order verification).
+5. If a candidate edit would produce broad delete+insert redlines, split it into smaller operations or convert it to comment guidance.
 
 ## Interpreting UNO fallback output
 UNO payload now includes per-operation diagnostics:
@@ -83,7 +91,9 @@ UNO payload now includes per-operation diagnostics:
 - `author_binding_status`
 - `operation_results[]`
 
-If low-hit global replacements are detected, CLI performs one deterministic retry by converting missed `replace_text_global` operations to single targeted replacements (`replace_text_once`) and records the retry under `operation.details.uno_retry`.
+Operation details may also include:
+- `author_binding_postprocess` when `Unknown Author` revisions introduced by UNO are normalized to the requested author label
+- `uno_retry` metadata when low-hit global replacements are retried as targeted single replacements
 
 ## Verification profile selection
 Use `business-docs` for release-quality, layout-sensitive sign-off.

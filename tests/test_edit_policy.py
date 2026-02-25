@@ -50,9 +50,9 @@ def test_strict_mode_comment_fallback_after_uno_failure(sample_docx: Path, monke
     patch = {
         "operations": [
             {
-                "type": "replace_paragraph_text",
-                "paragraph_index": 2,
-                "new_text": "Fallback via comment",
+                "type": "replace_text_global",
+                "find": "Second paragraph",
+                "replace": "Fallback via comment",
             }
         ]
     }
@@ -80,9 +80,9 @@ def test_strict_mode_fail_policy_exits_nonzero(sample_docx: Path, monkeypatch: p
     patch = {
         "operations": [
             {
-                "type": "replace_paragraph_text",
-                "paragraph_index": 2,
-                "new_text": "Fail policy",
+                "type": "replace_text_global",
+                "find": "Second paragraph",
+                "replace": "Fail policy",
             }
         ]
     }

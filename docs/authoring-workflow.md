@@ -10,6 +10,11 @@ uv run wordmark --help
 - Keep immutable baselines in `examples/canonical/`.
 - Write generated edits to `examples/edited/`.
 
+## Mutation safety
+- Never run mutating commands directly on your only copy of a document. Create an output copy with a dated suffix first.
+- Mutating commands (`comment add`, `edit apply`, `review accept`, `review reject`) acquire an exclusive per-document lock at `<docx>.wordmark.lock`.
+- Concurrent operations against the same `.docx` are queued by the lock, avoiding UNO write collisions.
+
 ## 1) Inspect a document
 ```bash
 uv run wordmark inspect docs/input.docx --json
@@ -71,8 +76,8 @@ uv run wordmark edit apply docs/input.docx --patch patch.json --json
 ```
 
 Patch operations currently supported by OOXML engine:
-- `replace_paragraph_text`
-- `replace_text_once`
+- `replace_paragraph_text` (attempts localized full-string replacement first; only falls back to tracked paragraph rewrite when policy allows).
+- `replace_text_once` (preferred for precise edits; emits minimal tracked `w:del`/`w:ins` deltas when safe).
 
 Fallback operation currently supported by UNO engine:
 - `replace_text_global`
@@ -85,7 +90,9 @@ Preflight strategy selection without mutation:
 uv run wordmark edit apply docs/input.docx --patch patch.json --preflight-only --json
 ```
 Preflight JSON includes `reason_code`, `reason_detail`, `detected_patterns`, `recommended_engine`, and `recommended_strategy`.
-UNO fallback JSON includes per-operation diagnostics (`status`, `replaced_count`, `strategy_used`) and may include `uno_retry` metadata if low-hit global operations are retried as targeted single replacements.
+UNO fallback JSON includes per-operation diagnostics (`status`, `replaced_count`, `strategy_used`, `author_binding_status`) and may include:
+- `uno_retry` metadata if low-hit global operations are retried as targeted single replacements
+- `author_binding_postprocess` metadata when newly introduced `Unknown Author` revisions are normalized to the requested author
 
 Policy controls:
 ```bash
@@ -97,6 +104,7 @@ uv run wordmark edit apply docs/input.docx --patch patch.json --on-unsupported u
 Defaults in strict mode:
 - no tracked paragraph rewrite fallback
 - OOXML strict -> UNO -> comment-only fallback
+- localized replacements emit minimal tracked deltas (for example insert-only and hyphen-only changes remain narrow)
 
 Hard-pattern fixtures for regression testing are in `examples/canonical/hard_patterns/`.
 
@@ -137,6 +145,8 @@ uv run wordmark render docs/input.docx --out tmp/docs/input_render --json
 ## Dry-run and auditability
 Mutating commands support `--dry-run` and always append operation metadata to:
 - `artifacts/transcripts/operations.jsonl`
+
+Lock files are removed automatically after command completion. If a stale lock filename remains after an interrupted run, it is safe to remove once no wordmark process is active for that document.
 
 ## Artifact cleanup
 Preview cleanup candidates:

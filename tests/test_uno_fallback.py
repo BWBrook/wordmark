@@ -96,3 +96,43 @@ def test_uno_fallback_replace_text_once_occurrence_and_author(tmp_path: Path) ->
     assert "Draft sentence in first paragraph." in lines
     assert "Final sentence in second paragraph." in lines
     assert any(rev.author == "Barry Brook" for rev in report.revisions)
+
+
+@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
+def test_parallel_uno_writes_are_serialized_by_lock(tmp_path: Path) -> None:
+    doc_path = tmp_path / "uno-lock.docx"
+    doc = Document()
+    doc.add_paragraph("alpha beta gamma")
+    doc.add_paragraph("delta epsilon zeta")
+    doc.save(doc_path)
+
+    patch1 = tmp_path / "patch1.json"
+    patch1.write_text(
+        json.dumps({"operations": [{"type": "replace_text_global", "find": "alpha", "replace": "ALPHA"}]}),
+        encoding="utf-8",
+    )
+    patch2 = tmp_path / "patch2.json"
+    patch2.write_text(
+        json.dumps({"operations": [{"type": "replace_text_global", "find": "delta", "replace": "DELTA"}]}),
+        encoding="utf-8",
+    )
+
+    cmd1 = ["uv", "run", "wordmark", "edit", "apply", str(doc_path), "--patch", str(patch1), "--json"]
+    cmd2 = ["uv", "run", "wordmark", "edit", "apply", str(doc_path), "--patch", str(patch2), "--json"]
+    p1 = subprocess.Popen(cmd1, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    p2 = subprocess.Popen(cmd2, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    out1, err1 = p1.communicate(timeout=120)
+    out2, err2 = p2.communicate(timeout=120)
+
+    assert p1.returncode == 0, err1
+    assert p2.returncode == 0, err2
+
+    payload1 = json.loads(out1)
+    payload2 = json.loads(out2)
+    assert payload1["operation"]["engine"] == "uno"
+    assert payload2["operation"]["engine"] == "uno"
+
+    report = ooxml_engine.inspect(doc_path)
+    merged = report.text
+    assert "ALPHA beta gamma" in merged
+    assert "DELTA epsilon zeta" in merged

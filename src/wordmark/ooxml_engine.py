@@ -376,6 +376,26 @@ def _paragraph_has_risky_markup(paragraph: etree._Element) -> bool:
     return bool(_paragraph_risky_patterns(paragraph))
 
 
+def _replacement_delta(old_text: str, new_text: str) -> tuple[str, str, str, str]:
+    """Return common prefix/suffix and changed middle segments."""
+    prefix_len = 0
+    max_prefix = min(len(old_text), len(new_text))
+    while prefix_len < max_prefix and old_text[prefix_len] == new_text[prefix_len]:
+        prefix_len += 1
+
+    old_tail = len(old_text)
+    new_tail = len(new_text)
+    while old_tail > prefix_len and new_tail > prefix_len and old_text[old_tail - 1] == new_text[new_tail - 1]:
+        old_tail -= 1
+        new_tail -= 1
+
+    common_prefix = old_text[:prefix_len]
+    old_middle = old_text[prefix_len:old_tail]
+    common_suffix = old_text[old_tail:]
+    new_middle = new_text[prefix_len:new_tail]
+    return common_prefix, old_middle, common_suffix, new_middle
+
+
 def _replace_text_once_localized(
     paragraph: etree._Element,
     *,
@@ -411,36 +431,42 @@ def _replace_text_once_localized(
         parent.remove(run)
 
         if track_changes:
-            if prefix:
+            common_prefix, old_middle, common_suffix, new_middle = _replacement_delta(matched, replacement)
+            left_text = prefix + common_prefix
+            right_text = common_suffix + suffix
+
+            if left_text:
                 if extras:
                     prefix_run = deepcopy(run)
                     prefix_text = prefix_run.find(_w("t"))
                     if prefix_text is None:
                         return None
-                    _set_text_node(prefix_text, prefix)
+                    _set_text_node(prefix_text, left_text)
                     parent.insert(idx, prefix_run)
                 else:
-                    parent.insert(idx, _build_run_like(run, prefix, tag="t"))
+                    parent.insert(idx, _build_run_like(run, left_text, tag="t"))
                 idx += 1
 
-            deleted = etree.Element(_w("del"))
-            deleted.set(_w_attr("id"), str(revision_id))
-            deleted.set(_w_attr("author"), author)
-            deleted.set(_w_attr("date"), timestamp)
-            deleted.append(_build_run_like(run, matched, tag="delText"))
-            parent.insert(idx, deleted)
-            idx += 1
+            if old_middle:
+                deleted = etree.Element(_w("del"))
+                deleted.set(_w_attr("id"), str(revision_id))
+                deleted.set(_w_attr("author"), author)
+                deleted.set(_w_attr("date"), timestamp)
+                deleted.append(_build_run_like(run, old_middle, tag="delText"))
+                parent.insert(idx, deleted)
+                idx += 1
 
-            inserted = etree.Element(_w("ins"))
-            inserted.set(_w_attr("id"), str(revision_id + 1))
-            inserted.set(_w_attr("author"), author)
-            inserted.set(_w_attr("date"), timestamp)
-            inserted.append(_build_run_like(run, replacement, tag="t"))
-            parent.insert(idx, inserted)
-            idx += 1
+            if new_middle:
+                inserted = etree.Element(_w("ins"))
+                inserted.set(_w_attr("id"), str(revision_id + 1))
+                inserted.set(_w_attr("author"), author)
+                inserted.set(_w_attr("date"), timestamp)
+                inserted.append(_build_run_like(run, new_middle, tag="t"))
+                parent.insert(idx, inserted)
+                idx += 1
 
-            if suffix:
-                parent.insert(idx, _build_run_like(run, suffix, tag="t"))
+            if right_text:
+                parent.insert(idx, _build_run_like(run, right_text, tag="t"))
         else:
             merged_text = prefix + replacement + suffix
             if extras:
@@ -507,28 +533,34 @@ def _replace_text_once_localized(
                 parent.remove(window_run)
 
             if track_changes:
-                if prefix:
-                    parent.insert(insert_idx, _build_run_like(template_run, prefix, tag="t"))
+                common_prefix, old_middle, common_suffix, new_middle = _replacement_delta(matched, replacement)
+                left_text = prefix + common_prefix
+                right_text = common_suffix + suffix
+
+                if left_text:
+                    parent.insert(insert_idx, _build_run_like(template_run, left_text, tag="t"))
                     insert_idx += 1
 
-                deleted = etree.Element(_w("del"))
-                deleted.set(_w_attr("id"), str(revision_id))
-                deleted.set(_w_attr("author"), author)
-                deleted.set(_w_attr("date"), timestamp)
-                deleted.append(_build_run_like(template_run, matched, tag="delText"))
-                parent.insert(insert_idx, deleted)
-                insert_idx += 1
+                if old_middle:
+                    deleted = etree.Element(_w("del"))
+                    deleted.set(_w_attr("id"), str(revision_id))
+                    deleted.set(_w_attr("author"), author)
+                    deleted.set(_w_attr("date"), timestamp)
+                    deleted.append(_build_run_like(template_run, old_middle, tag="delText"))
+                    parent.insert(insert_idx, deleted)
+                    insert_idx += 1
 
-                inserted = etree.Element(_w("ins"))
-                inserted.set(_w_attr("id"), str(revision_id + 1))
-                inserted.set(_w_attr("author"), author)
-                inserted.set(_w_attr("date"), timestamp)
-                inserted.append(_build_run_like(template_run, replacement, tag="t"))
-                parent.insert(insert_idx, inserted)
-                insert_idx += 1
+                if new_middle:
+                    inserted = etree.Element(_w("ins"))
+                    inserted.set(_w_attr("id"), str(revision_id + 1))
+                    inserted.set(_w_attr("author"), author)
+                    inserted.set(_w_attr("date"), timestamp)
+                    inserted.append(_build_run_like(template_run, new_middle, tag="t"))
+                    parent.insert(insert_idx, inserted)
+                    insert_idx += 1
 
-                if suffix:
-                    parent.insert(insert_idx, _build_run_like(template_run, suffix, tag="t"))
+                if right_text:
+                    parent.insert(insert_idx, _build_run_like(template_run, right_text, tag="t"))
             else:
                 parent.insert(insert_idx, _build_run_like(template_run, prefix + replacement + suffix, tag="t"))
 
@@ -1094,10 +1126,6 @@ def apply_patch(
                     "Risky OOXML markup detected for paragraph rewrite "
                     f"at paragraph {idx}: {', '.join(risky_patterns)}"
                 )
-            if track_changes and not allow_paragraph_rewrite_tracked:
-                raise OoxmlUnsupportedOperation(
-                    f"Tracked paragraph rewrite disallowed by fidelity policy at paragraph {idx}"
-                )
             expected = op.get("expected_text")
             old_text = _paragraph_text(p)
             if expected is not None and old_text != expected:
@@ -1105,19 +1133,38 @@ def apply_patch(
                     f"Expected paragraph text mismatch at index {idx}: expected={expected!r}, actual={old_text!r}"
                 )
             new_text = str(op.get("new_text", ""))
-            report = _replace_paragraph_content(
-                p,
-                new_text,
-                track_changes=track_changes,
-                author=author,
-                revision_id=next_revision_id,
-                timestamp=timestamp,
-            )
+            report = None
+            if old_text:
+                report = _replace_text_once_localized(
+                    p,
+                    find_text=old_text,
+                    replacement=new_text,
+                    track_changes=track_changes,
+                    author=author,
+                    revision_id=next_revision_id,
+                    timestamp=timestamp,
+                )
+
+            if report is None:
+                if track_changes and not allow_paragraph_rewrite_tracked:
+                    raise OoxmlUnsupportedOperation(
+                        f"Tracked paragraph rewrite disallowed by fidelity policy at paragraph {idx}"
+                    )
+                report = _replace_paragraph_content(
+                    p,
+                    new_text,
+                    track_changes=track_changes,
+                    author=author,
+                    revision_id=next_revision_id,
+                    timestamp=timestamp,
+                )
+                report["strategy"] = "paragraph_rewrite"
+
             report.update(
                 {
                     "type": op_type,
                     "paragraph_index": idx,
-                    "strategy": "paragraph_rewrite",
+                    "strategy": str(report.get("strategy", "localized_run")),
                     "anchor": anchor or {},
                     "anchor_resolution": anchor_resolution,
                 }

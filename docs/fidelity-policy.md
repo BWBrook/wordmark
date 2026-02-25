@@ -39,6 +39,8 @@ Use case:
 ## Tracked-edit policy
 - Default `fidelity_mode`: `strict`.
 - In strict mode, tracked paragraph rewrite fallback is disabled.
+- Localized replacements must compute common prefix/suffix and emit minimal middle-segment `w:del`/`w:ins` deltas where safe.
+- `replace_paragraph_text` must attempt localized full-string replacement before any tracked paragraph rewrite fallback.
 - Strategy chain for unsupported OOXML localized edits:
   1. OOXML strict attempt
   2. UNO fallback attempt
@@ -57,8 +59,14 @@ Use case:
 
 ## UNO fallback reliability policy
 - UNO output must remain auditable through `operation_results` diagnostics.
+- UNO payload must report `author_binding_status` for track-change attribution observability.
+- If UNO introduces revisions with unresolved author fields, post-process normalization must bind newly introduced `Unknown Author` revisions to the requested author and record `author_binding_postprocess`.
 - If global replacements miss, CLI may perform one deterministic retry by converting missed `replace_text_global` operations to `replace_text_once`.
 - Retry metadata must be recorded under operation details; no silent strategy changes.
+
+## Concurrency/write-safety policy
+- Mutating commands targeting the same `.docx` must be serialized with an exclusive per-file lock (`<docx>.wordmark.lock`).
+- Concurrent edits to one file without lock coordination are out of policy due to reproducible UNO store/write collisions.
 
 ## Anchor policy
 - Preferred anchor model is paragraph+context:
@@ -82,4 +90,5 @@ Escalate to manual review when:
 - render diff gate fails,
 - comment/reference integrity fails,
 - UNO fallback yields unexpectedly low hit rates,
+- UNO post-process reports unresolved unknown revision authors after normalization,
 - document complexity exceeds supported operation patterns.

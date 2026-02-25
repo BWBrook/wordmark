@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+import fcntl
 import json
 from pathlib import Path
 from typing import Any
@@ -332,6 +334,22 @@ def _date_suffix(now: datetime | None = None) -> str:
     return current.strftime("%a%d%b%Y").lower()
 
 
+@contextmanager
+def _docx_operation_lock(docx_path: Path):
+    lock_path = docx_path.with_suffix(docx_path.suffix + ".wordmark.lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield lock_path
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    try:
+        lock_path.unlink()
+    except OSError:
+        pass
+
+
 @app.command("version")
 def version() -> None:
     """Print tool version."""
@@ -392,15 +410,16 @@ def comment_add(
     resolved_author = _resolve_author(author, config)
     resolved_initials = _resolve_initials(initials, config)
 
-    result = ooxml_engine.add_comment(
-        docx,
-        selector=anchor,
-        anchor=anchor_payload,
-        text=text,
-        author=resolved_author,
-        initials=resolved_initials,
-        dry_run=dry_run,
-    )
+    with _docx_operation_lock(docx):
+        result = ooxml_engine.add_comment(
+            docx,
+            selector=anchor,
+            anchor=anchor_payload,
+            text=text,
+            author=resolved_author,
+            initials=resolved_initials,
+            dry_run=dry_run,
+        )
     transcript_path = append_transcript(config, result)
 
     payload = {
@@ -467,127 +486,128 @@ def edit_apply(
     fallback_reason = ""
     uno_enabled = "uno" in config.engine_order
 
-    try:
-        result = ooxml_engine.apply_patch(
-            docx,
-            patch_data=patch_data,
-            author=resolved_author,
-            track_changes=track,
-            dry_run=dry_run,
-            allow_paragraph_rewrite_tracked=bool(policy["allow_paragraph_rewrite_tracked"]),
-        )
-        attempts.append({"engine": "ooxml", "status": "applied"})
-    except ooxml_engine.OoxmlUnsupportedOperation as exc:
-        fallback_reason = str(exc)
-        attempts.append({"engine": "ooxml", "status": "unsupported", "reason": fallback_reason})
-        errors.append(f"ooxml: {exc}")
-    except Exception as exc:  # pragma: no cover - surfaced to user
-        fallback_reason = str(exc)
-        attempts.append({"engine": "ooxml", "status": "error", "reason": fallback_reason})
-        errors.append(f"ooxml: {exc}")
+    with _docx_operation_lock(docx):
+        try:
+            result = ooxml_engine.apply_patch(
+                docx,
+                patch_data=patch_data,
+                author=resolved_author,
+                track_changes=track,
+                dry_run=dry_run,
+                allow_paragraph_rewrite_tracked=bool(policy["allow_paragraph_rewrite_tracked"]),
+            )
+            attempts.append({"engine": "ooxml", "status": "applied"})
+        except ooxml_engine.OoxmlUnsupportedOperation as exc:
+            fallback_reason = str(exc)
+            attempts.append({"engine": "ooxml", "status": "unsupported", "reason": fallback_reason})
+            errors.append(f"ooxml: {exc}")
+        except Exception as exc:  # pragma: no cover - surfaced to user
+            fallback_reason = str(exc)
+            attempts.append({"engine": "ooxml", "status": "error", "reason": fallback_reason})
+            errors.append(f"ooxml: {exc}")
 
-    if result is None:
-        if policy["on_unsupported"] == "comment":
-            try:
-                result = _apply_comment_fallback(
-                    docx=docx,
-                    patch_data=patch_data,
-                    preflight=preflight,
-                    reason=fallback_reason or "ooxml unsupported",
-                    author=resolved_author,
-                    initials=resolved_initials,
-                    config=config,
-                    dry_run=dry_run,
-                )
-                attempts.append({"engine": "comment_fallback", "status": "applied"})
-            except Exception as exc:  # pragma: no cover - surfaced to user
-                attempts.append({"engine": "comment_fallback", "status": "error", "reason": str(exc)})
-                errors.append(f"comment_fallback: {exc}")
-
-        elif policy["on_unsupported"] == "uno":
-            if not uno_enabled:
-                attempts.append({"engine": "uno", "status": "skipped", "reason": "uno_not_enabled"})
-                errors.append("uno: engine not enabled in config.engine_order")
-            else:
+        if result is None:
+            if policy["on_unsupported"] == "comment":
                 try:
-                    result = uno_engine.apply_patch(
-                        docx,
+                    result = _apply_comment_fallback(
+                        docx=docx,
                         patch_data=patch_data,
+                        preflight=preflight,
+                        reason=fallback_reason or "ooxml unsupported",
                         author=resolved_author,
-                        track_changes=track,
+                        initials=resolved_initials,
+                        config=config,
                         dry_run=dry_run,
-                        fallback_reason=fallback_reason or "ooxml unsupported",
                     )
-                    attempts.append({"engine": "uno", "status": "applied"})
-
-                    uno_payload = result.details.get("uno", {})
-                    if isinstance(uno_payload, dict) and _should_retry_uno_low_hit(uno_payload) and not dry_run:
-                        retry_patch = _build_uno_low_hit_retry_patch(uno_payload)
-                        if retry_patch is not None:
-                            try:
-                                retry_result = uno_engine.apply_patch(
-                                    docx,
-                                    patch_data=retry_patch,
-                                    author=resolved_author,
-                                    track_changes=track,
-                                    dry_run=False,
-                                    fallback_reason="uno low-hit retry after initial global pass",
-                                )
-                                result.details["uno_retry"] = {
-                                    "attempted": True,
-                                    "patch": retry_patch,
-                                    "result": retry_result.details.get("uno", {}),
-                                    "author_binding_postprocess": retry_result.details.get("author_binding_postprocess"),
-                                }
-                                result.changed = bool(result.changed or retry_result.changed)
-                                attempts.append(
-                                    {
-                                        "engine": "uno",
-                                        "status": "retry_applied",
-                                        "requested_operations": len(retry_patch.get("operations", [])),
-                                        "changed": retry_result.changed,
-                                    }
-                                )
-                            except Exception as retry_exc:  # pragma: no cover - surfaced to user
-                                result.details["uno_retry"] = {
-                                    "attempted": True,
-                                    "patch": retry_patch,
-                                    "error": str(retry_exc),
-                                }
-                                attempts.append(
-                                    {
-                                        "engine": "uno",
-                                        "status": "retry_error",
-                                        "reason": str(retry_exc),
-                                    }
-                                )
-                                errors.append(f"uno_retry: {retry_exc}")
+                    attempts.append({"engine": "comment_fallback", "status": "applied"})
                 except Exception as exc:  # pragma: no cover - surfaced to user
-                    attempts.append({"engine": "uno", "status": "error", "reason": str(exc)})
-                    errors.append(f"uno: {exc}")
-                    if policy["on_uno_fail"] == "comment":
-                        try:
-                            result = _apply_comment_fallback(
-                                docx=docx,
-                                patch_data=patch_data,
-                                preflight=preflight,
-                                reason=f"uno failed after ooxml unsupported: {exc}",
-                                author=resolved_author,
-                                initials=resolved_initials,
-                                config=config,
-                                dry_run=dry_run,
-                            )
-                            attempts.append({"engine": "comment_fallback", "status": "applied", "after": "uno"})
-                        except Exception as comment_exc:  # pragma: no cover - surfaced to user
-                            attempts.append(
-                                {
-                                    "engine": "comment_fallback",
-                                    "status": "error",
-                                    "reason": str(comment_exc),
-                                    "after": "uno",
-                                }
-                            )
-                            errors.append(f"comment_fallback: {comment_exc}")
+                    attempts.append({"engine": "comment_fallback", "status": "error", "reason": str(exc)})
+                    errors.append(f"comment_fallback: {exc}")
+
+            elif policy["on_unsupported"] == "uno":
+                if not uno_enabled:
+                    attempts.append({"engine": "uno", "status": "skipped", "reason": "uno_not_enabled"})
+                    errors.append("uno: engine not enabled in config.engine_order")
+                else:
+                    try:
+                        result = uno_engine.apply_patch(
+                            docx,
+                            patch_data=patch_data,
+                            author=resolved_author,
+                            track_changes=track,
+                            dry_run=dry_run,
+                            fallback_reason=fallback_reason or "ooxml unsupported",
+                        )
+                        attempts.append({"engine": "uno", "status": "applied"})
+
+                        uno_payload = result.details.get("uno", {})
+                        if isinstance(uno_payload, dict) and _should_retry_uno_low_hit(uno_payload) and not dry_run:
+                            retry_patch = _build_uno_low_hit_retry_patch(uno_payload)
+                            if retry_patch is not None:
+                                try:
+                                    retry_result = uno_engine.apply_patch(
+                                        docx,
+                                        patch_data=retry_patch,
+                                        author=resolved_author,
+                                        track_changes=track,
+                                        dry_run=False,
+                                        fallback_reason="uno low-hit retry after initial global pass",
+                                    )
+                                    result.details["uno_retry"] = {
+                                        "attempted": True,
+                                        "patch": retry_patch,
+                                        "result": retry_result.details.get("uno", {}),
+                                        "author_binding_postprocess": retry_result.details.get("author_binding_postprocess"),
+                                    }
+                                    result.changed = bool(result.changed or retry_result.changed)
+                                    attempts.append(
+                                        {
+                                            "engine": "uno",
+                                            "status": "retry_applied",
+                                            "requested_operations": len(retry_patch.get("operations", [])),
+                                            "changed": retry_result.changed,
+                                        }
+                                    )
+                                except Exception as retry_exc:  # pragma: no cover - surfaced to user
+                                    result.details["uno_retry"] = {
+                                        "attempted": True,
+                                        "patch": retry_patch,
+                                        "error": str(retry_exc),
+                                    }
+                                    attempts.append(
+                                        {
+                                            "engine": "uno",
+                                            "status": "retry_error",
+                                            "reason": str(retry_exc),
+                                        }
+                                    )
+                                    errors.append(f"uno_retry: {retry_exc}")
+                    except Exception as exc:  # pragma: no cover - surfaced to user
+                        attempts.append({"engine": "uno", "status": "error", "reason": str(exc)})
+                        errors.append(f"uno: {exc}")
+                        if policy["on_uno_fail"] == "comment":
+                            try:
+                                result = _apply_comment_fallback(
+                                    docx=docx,
+                                    patch_data=patch_data,
+                                    preflight=preflight,
+                                    reason=f"uno failed after ooxml unsupported: {exc}",
+                                    author=resolved_author,
+                                    initials=resolved_initials,
+                                    config=config,
+                                    dry_run=dry_run,
+                                )
+                                attempts.append({"engine": "comment_fallback", "status": "applied", "after": "uno"})
+                            except Exception as comment_exc:  # pragma: no cover - surfaced to user
+                                attempts.append(
+                                    {
+                                        "engine": "comment_fallback",
+                                        "status": "error",
+                                        "reason": str(comment_exc),
+                                        "after": "uno",
+                                    }
+                                )
+                                errors.append(f"comment_fallback: {comment_exc}")
 
     if result is None:
         _echo(
@@ -651,13 +671,14 @@ def review_accept(
     resolved_actor = _resolve_author(actor, config)
     filter_author = None if all_authors else author
 
-    result = ooxml_engine.review_action(
-        docx,
-        mode="accept",
-        author=filter_author,
-        actor=resolved_actor,
-        dry_run=dry_run,
-    )
+    with _docx_operation_lock(docx):
+        result = ooxml_engine.review_action(
+            docx,
+            mode="accept",
+            author=filter_author,
+            actor=resolved_actor,
+            dry_run=dry_run,
+        )
     transcript_path = append_transcript(config, result)
 
     payload = {
@@ -682,13 +703,14 @@ def review_reject(
     resolved_actor = _resolve_author(actor, config)
     filter_author = None if all_authors else author
 
-    result = ooxml_engine.review_action(
-        docx,
-        mode="reject",
-        author=filter_author,
-        actor=resolved_actor,
-        dry_run=dry_run,
-    )
+    with _docx_operation_lock(docx):
+        result = ooxml_engine.review_action(
+            docx,
+            mode="reject",
+            author=filter_author,
+            actor=resolved_actor,
+            dry_run=dry_run,
+        )
     transcript_path = append_transcript(config, result)
 
     payload = {
