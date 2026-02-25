@@ -213,6 +213,268 @@ def _apply_comment_fallback(
     )
 
 
+def _replacement_delta(old_text: str, new_text: str) -> tuple[str, str, str, str]:
+    """Return common prefix/suffix and changed middle segments."""
+    prefix_len = 0
+    max_prefix = min(len(old_text), len(new_text))
+    while prefix_len < max_prefix and old_text[prefix_len] == new_text[prefix_len]:
+        prefix_len += 1
+
+    old_tail = len(old_text)
+    new_tail = len(new_text)
+    while old_tail > prefix_len and new_tail > prefix_len and old_text[old_tail - 1] == new_text[new_tail - 1]:
+        old_tail -= 1
+        new_tail -= 1
+
+    common_prefix = old_text[:prefix_len]
+    old_middle = old_text[prefix_len:old_tail]
+    common_suffix = old_text[old_tail:]
+    new_middle = new_text[prefix_len:new_tail]
+    return common_prefix, old_middle, common_suffix, new_middle
+
+
+def _find_nth_bounds(text: str, needle: str, occurrence: int) -> tuple[int, int] | None:
+    if occurrence < 1 or not needle:
+        return None
+
+    count = 0
+    search_from = 0
+    while True:
+        idx = text.find(needle, search_from)
+        if idx < 0:
+            return None
+        count += 1
+        if count == occurrence:
+            return (idx, idx + len(needle))
+        search_from = idx + max(1, len(needle))
+
+
+def _occurrence_for_start(text: str, needle: str, start_index: int) -> int | None:
+    if not needle:
+        return None
+
+    count = 0
+    search_from = 0
+    while True:
+        idx = text.find(needle, search_from)
+        if idx < 0:
+            return None
+        count += 1
+        if idx == start_index:
+            return count
+        search_from = idx + max(1, len(needle))
+
+
+def _replace_nth(text: str, find_text: str, replace_text: str, occurrence: int) -> tuple[str, bool]:
+    bounds = _find_nth_bounds(text, find_text, occurrence)
+    if bounds is None:
+        return text, False
+    start, end = bounds
+    return text[:start] + replace_text + text[end:], True
+
+
+def _build_minimal_uno_replace_once(
+    *,
+    op: dict[str, Any],
+    op_index: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    find_text = op.get("find")
+    replace_text = op.get("replace")
+
+    if not isinstance(find_text, str) or not isinstance(replace_text, str):
+        return op, {
+            "index": op_index,
+            "type": str(op.get("type")),
+            "status": "passthrough",
+            "reason": "non_string_find_or_replace",
+        }
+
+    try:
+        occurrence = int(op.get("occurrence", 1))
+    except (TypeError, ValueError):
+        occurrence = 1
+
+    if occurrence < 1:
+        return op, {
+            "index": op_index,
+            "type": str(op.get("type")),
+            "status": "passthrough",
+            "reason": "invalid_occurrence",
+        }
+
+    if find_text == replace_text:
+        return op, {
+            "index": op_index,
+            "type": str(op.get("type")),
+            "status": "passthrough",
+            "reason": "no_text_delta",
+        }
+
+    common_prefix, old_middle, common_suffix, new_middle = _replacement_delta(find_text, replace_text)
+    if not old_middle and not new_middle:  # pragma: no cover - defensive (find!=replace already guards this)
+        return op, {
+            "index": op_index,
+            "type": str(op.get("type")),
+            "status": "passthrough",
+            "reason": "no_middle_delta",
+        }
+
+    span_start = len(common_prefix)
+    span_length = len(old_middle)
+    if span_start == 0 and span_length == len(find_text):
+        return op, {
+            "index": op_index,
+            "type": str(op.get("type")),
+            "status": "passthrough",
+            "reason": "no_precision_gain",
+        }
+
+    def _is_word_char(ch: str) -> bool:
+        return ch.isalnum() or ch in {"-", "_", "'"}
+
+    # If the computed replacement span cuts through a token, widen boundaries
+    # for substitution cases so tracked revisions do not show partial stems.
+    if old_middle and new_middle:
+        span_end = span_start + span_length
+        if (
+            span_start > 0
+            and span_start < len(find_text)
+            and _is_word_char(find_text[span_start - 1])
+            and _is_word_char(find_text[span_start])
+        ):
+            left = span_start
+            while left > 0 and _is_word_char(find_text[left - 1]):
+                left -= 1
+            prefix = find_text[left:span_start]
+            span_start = left
+            span_length = span_end - span_start
+            span_end = span_start + span_length
+            new_middle = prefix + new_middle
+
+        if (
+            span_end > 0
+            and span_end < len(find_text)
+            and _is_word_char(find_text[span_end - 1])
+            and _is_word_char(find_text[span_end])
+        ):
+            right = span_end
+            while right < len(find_text) and _is_word_char(find_text[right]):
+                right += 1
+            suffix = find_text[span_end:right]
+            span_length = right - span_start
+            new_middle = new_middle + suffix
+
+    if (
+        old_middle
+        and new_middle
+        and any(ch.isalnum() for ch in (old_middle + new_middle))
+        and " " not in old_middle
+        and "\t" not in old_middle
+        and " " not in new_middle
+        and "\t" not in new_middle
+    ):
+        token_start = span_start
+        token_end = span_start + span_length
+        while token_start > 0 and _is_word_char(find_text[token_start - 1]):
+            token_start -= 1
+        while token_end < len(find_text) and _is_word_char(find_text[token_end]):
+            token_end += 1
+
+        if token_start != span_start or token_end != span_start + span_length:
+            token_prefix = find_text[token_start:span_start]
+            token_suffix = find_text[span_start + span_length : token_end]
+            span_start = token_start
+            span_length = token_end - token_start
+            new_middle = token_prefix + new_middle + token_suffix
+
+    rewritten = dict(op)
+    rewritten["type"] = "replace_span_once"
+    rewritten["find"] = find_text
+    rewritten["occurrence"] = occurrence
+    rewritten["span_start"] = span_start
+    rewritten["span_length"] = span_length
+    rewritten["replacement"] = new_middle
+
+    if not old_middle and new_middle:
+        strategy = "insert_span"
+    elif old_middle and not new_middle:
+        strategy = "delete_span"
+    else:
+        strategy = "replace_span"
+
+    return rewritten, {
+        "index": op_index,
+        "type": str(op.get("type")),
+        "status": "rewritten",
+        "strategy": strategy,
+        "original_find": find_text,
+        "original_replace": replace_text,
+        "original_occurrence": occurrence,
+        "span_start": span_start,
+        "span_length": span_length,
+        "span_replacement": new_middle,
+    }
+
+
+def _prepare_uno_precision_patch(docx: Path, patch_data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    operations = patch_data.get("operations")
+    if not isinstance(operations, list) or not operations:
+        return patch_data, None
+
+    rewritten_ops: list[dict[str, Any]] = []
+    op_results: list[dict[str, Any]] = []
+    rewritten_count = 0
+
+    for index, op in enumerate(operations):
+        if not isinstance(op, dict):
+            rewritten_ops.append(op)
+            op_results.append(
+                {
+                    "index": index,
+                    "type": "unknown",
+                    "status": "passthrough",
+                    "reason": "non_object_operation",
+                }
+            )
+            continue
+
+        op_type = str(op.get("type"))
+        prepared_op = op
+        info: dict[str, Any] = {
+            "index": index,
+            "type": op_type,
+            "status": "passthrough",
+            "reason": "non_replace_text_once_operation",
+        }
+
+        if op_type == "replace_text_once":
+            prepared_op, info = _build_minimal_uno_replace_once(op=op, op_index=index)
+            if info.get("status") == "rewritten":
+                rewritten_count += 1
+
+        rewritten_ops.append(prepared_op)
+        op_results.append(info)
+
+    if rewritten_count == 0:
+        return patch_data, {
+            "attempted": True,
+            "rewritten_operations": 0,
+            "total_operations": len(operations),
+            "status": "no_rewrites",
+            "operation_results": op_results,
+        }
+
+    rewritten_patch = dict(patch_data)
+    rewritten_patch["operations"] = rewritten_ops
+    return rewritten_patch, {
+        "attempted": True,
+        "rewritten_operations": rewritten_count,
+        "total_operations": len(operations),
+        "status": "rewritten",
+        "operation_results": op_results,
+    }
+
+
 def _build_uno_low_hit_retry_patch(uno_payload: dict[str, Any]) -> dict[str, Any] | None:
     op_results = uno_payload.get("operation_results")
     if not isinstance(op_results, list):
@@ -530,15 +792,22 @@ def edit_apply(
                     errors.append("uno: engine not enabled in config.engine_order")
                 else:
                     try:
+                        uno_patch_data = patch_data
+                        precision_rewrite: dict[str, Any] | None = None
+                        if not dry_run:
+                            uno_patch_data, precision_rewrite = _prepare_uno_precision_patch(docx, patch_data)
+
                         result = uno_engine.apply_patch(
                             docx,
-                            patch_data=patch_data,
+                            patch_data=uno_patch_data,
                             author=resolved_author,
                             track_changes=track,
                             dry_run=dry_run,
                             fallback_reason=fallback_reason or "ooxml unsupported",
                         )
                         attempts.append({"engine": "uno", "status": "applied"})
+                        if precision_rewrite is not None:
+                            result.details["uno_precision_rewrite"] = precision_rewrite
 
                         uno_payload = result.details.get("uno", {})
                         if isinstance(uno_payload, dict) and _should_retry_uno_low_hit(uno_payload) and not dry_run:

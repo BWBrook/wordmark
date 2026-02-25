@@ -98,3 +98,9 @@
 - Context: Replacing a phrase for tiny edits (for example `73% studies` -> `73% of studies`, `bird specific` -> `bird-specific`) previously produced full-span delete/insert revisions, reducing review fidelity.
 - Decision: For localized tracked replacements, compute common prefix/suffix and emit only middle-segment `w:del`/`w:ins` deltas; for `replace_paragraph_text`, attempt localized full-string replacement before paragraph rewrite fallback.
 - Consequences: Word review view now shows concise, intent-aligned edits (insertions/hyphen swaps/tail appends) in many cases, with paragraph rewrite still available as fallback when localization is unsafe.
+
+## 2026-02-25 - ADR-017: UNO fallback rewrites replace_text_once to minimal spans when safe
+- Status: accepted
+- Context: Complex documents that route to UNO fallback (for example field-code/risky-markup paragraphs) were still producing broad clause-level tracked replacements even for tiny wording/punctuation edits.
+- Decision: Before UNO apply, rewrite eligible `replace_text_once` operations to `replace_span_once` operations anchored on the original matched text plus a precise in-match span (`span_start`, `span_length`, `replacement`) computed from prefix/suffix deltas.
+- Consequences: Fallback edits in risky-markup documents can express insertion-only, deletion-only, and punctuation-only tracked changes without replacing untouched surrounding text; rewrite diagnostics are recorded under `operation.details.uno_precision_rewrite` for auditability.

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from wordmark.cli import app
+from wordmark.cli import _prepare_uno_precision_patch, app
 from wordmark.models import OperationResult
 from wordmark import ooxml_engine
 from wordmark import uno_engine
@@ -186,3 +186,227 @@ def test_uno_low_hit_retry_is_reported(sample_docx: Path, monkeypatch: pytest.Mo
     assert payload["operation"]["details"]["uno_retry"]["attempted"] is True
     assert payload["operation"]["details"]["uno_retry"]["patch"]["operations"][0]["type"] == "replace_text_once"
     assert any(item["status"] == "retry_applied" for item in payload["attempts"])
+
+
+def test_prepare_uno_precision_patch_rewrites_insertion_to_suffix_anchor(sample_docx: Path) -> None:
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Second paragraph for tracked replacement operations.",
+                "replace": "Second paragraph for carefully tracked replacement operations.",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    assert info is not None
+    assert info["status"] == "rewritten"
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "Second paragraph for tracked replacement operations."
+    assert op["occurrence"] == 1
+    assert op["span_start"] == len("Second paragraph for ")
+    assert op["span_length"] == 0
+    assert op["replacement"] == "carefully "
+
+
+def test_edit_apply_records_uno_precision_rewrite(sample_docx: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Second paragraph for tracked replacement operations.",
+                "replace": "Second paragraph for carefully tracked replacement operations.",
+            }
+        ]
+    }
+    patch_path = _write_patch(sample_docx, patch)
+
+    def fake_ooxml_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise ooxml_engine.OoxmlUnsupportedOperation("risky ooxml markup")
+
+    captured_uno_patch: dict[str, object] = {}
+
+    def fake_uno_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        patch_data = kwargs["patch_data"]
+        captured_uno_patch["patch_data"] = patch_data
+        return OperationResult.now(
+            command="edit apply",
+            path=sample_docx,
+            engine="uno",
+            changed=True,
+            author="Barry Brook",
+            details={
+                "uno": {
+                    "summary": {"requested_operations": 1, "operations_with_hits": 1, "operations_without_hits": 0},
+                    "operation_results": [
+                        {
+                            "index": 0,
+                            "type": patch_data["operations"][0]["type"],
+                            "status": "applied",
+                            "replaced_count": 1,
+                            "requested": patch_data["operations"][0],
+                        }
+                    ],
+                }
+            },
+        )
+
+    monkeypatch.setattr(ooxml_engine, "apply_patch", fake_ooxml_apply_patch)
+    monkeypatch.setattr(uno_engine, "apply_patch", fake_uno_apply_patch)
+
+    result = runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(patch_path), "--json"])
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    rewrite = payload["operation"]["details"]["uno_precision_rewrite"]
+    assert rewrite["attempted"] is True
+    assert rewrite["rewritten_operations"] == 1
+
+    prepared = captured_uno_patch["patch_data"]
+    assert isinstance(prepared, dict)
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "Second paragraph for tracked replacement operations."
+    assert op["span_length"] == 0
+    assert op["replacement"] == "carefully "
+
+
+def test_prepare_uno_precision_patch_widens_punctuation_delta_with_context(tmp_path: Path) -> None:
+    from docx import Document
+
+    doc_path = tmp_path / "punctuation.docx"
+    doc = Document()
+    doc.add_paragraph(
+        "In terms of habitat, forest ecosystems dominated the literature; temperate and tropical forests were common."
+    )
+    doc.save(doc_path)
+
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "forest ecosystems dominated the literature;",
+                "replace": "forest ecosystems dominated the literature,",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "forest ecosystems dominated the literature;"
+    assert op["span_start"] == len("forest ecosystems dominated the literature")
+    assert op["span_length"] == 1
+    assert op["replacement"] == ","
+
+
+def test_prepare_uno_precision_patch_rewrites_tail_append_without_suffix(sample_docx: Path) -> None:
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Second paragraph for tracked replacement operations.",
+                "replace": "Second paragraph for tracked replacement operations. Please confirm.",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "Second paragraph for tracked replacement operations."
+    assert op["span_start"] == len("Second paragraph for tracked replacement operations.")
+    assert op["span_length"] == 0
+    assert op["replacement"] == " Please confirm."
+
+
+def test_prepare_uno_precision_patch_rewrites_sentence_to_internal_span(tmp_path: Path) -> None:
+    from docx import Document
+
+    doc_path = tmp_path / "word-token.docx"
+    doc = Document()
+    doc.add_paragraph("Median absolute deviations are provided in the appendix.")
+    doc.save(doc_path)
+
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Median absolute deviations are provided in the appendix.",
+                "replace": "Median absolute deviations are reported in the appendix.",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "Median absolute deviations are provided in the appendix."
+    assert op["span_start"] == len("Median absolute deviations are ")
+    assert op["span_length"] == len("provided")
+    assert op["replacement"] == "reported"
+
+
+def test_prepare_uno_precision_patch_expands_single_token_boundaries(sample_docx: Path) -> None:
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "The field displays a strong terrestrial filter:",
+                "replace": "The field shows a strong terrestrial filter:",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert op["find"] == "The field displays a strong terrestrial filter:"
+    assert op["span_start"] == len("The field ")
+    assert op["span_length"] == len("displays")
+    assert op["replacement"] == "shows"
+
+
+def test_prepare_uno_precision_patch_avoids_partial_word_boundary(tmp_path: Path) -> None:
+    from docx import Document
+
+    doc_path = tmp_path / "boundary.docx"
+    doc = Document()
+    doc.add_paragraph("Models were fitted using Non-linear Least-square Regression.")
+    doc.save(doc_path)
+
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Models were fitted using Non-linear Least-square Regression.",
+                "replace": "Models were fitted using non-linear least-squares regression.",
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+
+    op = prepared["operations"][0]
+    assert op["type"] == "replace_span_once"
+    assert "regression" in op["replacement"]
+    assert not op["replacement"].endswith(" r")

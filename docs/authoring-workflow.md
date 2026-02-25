@@ -93,6 +93,7 @@ Preflight JSON includes `reason_code`, `reason_detail`, `detected_patterns`, `re
 UNO fallback JSON includes per-operation diagnostics (`status`, `replaced_count`, `strategy_used`, `author_binding_status`) and may include:
 - `uno_retry` metadata if low-hit global operations are retried as targeted single replacements
 - `author_binding_postprocess` metadata when newly introduced `Unknown Author` revisions are normalized to the requested author
+- `uno_precision_rewrite` metadata when fallback `replace_text_once` operations are narrowed to minimal spans before UNO apply
 
 Policy controls:
 ```bash

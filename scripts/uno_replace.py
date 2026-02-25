@@ -149,6 +149,61 @@ def _replace_text_once(doc: Any, *, find_text: str, replacement: str, occurrence
     }
 
 
+def _replace_span_once(
+    doc: Any,
+    *,
+    find_text: str,
+    occurrence: int,
+    span_start: int,
+    span_length: int,
+    replacement: str,
+) -> dict[str, Any]:
+    if occurrence < 1:
+        raise ValueError(f"replace_span_once occurrence must be >= 1; got {occurrence}")
+    if span_start < 0 or span_length < 0:
+        raise ValueError(f"replace_span_once span values must be >= 0; got start={span_start}, length={span_length}")
+
+    descriptor = doc.createSearchDescriptor()
+    descriptor.SearchString = find_text
+
+    target, matched = _find_nth_occurrence(doc, descriptor, occurrence=occurrence)
+    if target is None:
+        return {
+            "status": "not_found",
+            "strategy_used": "replace_span_once",
+            "replaced_count": 0,
+            "matched_occurrences": matched,
+            "requested_occurrence": occurrence,
+        }
+
+    matched_text = target.getString()
+    if span_start > len(matched_text) or span_start + span_length > len(matched_text):
+        return {
+            "status": "invalid_span",
+            "strategy_used": "replace_span_once",
+            "replaced_count": 0,
+            "matched_occurrences": matched,
+            "requested_occurrence": occurrence,
+            "matched_text_length": len(matched_text),
+        }
+
+    text_obj = target.getText()
+    cursor = text_obj.createTextCursorByRange(target.getStart())
+    if span_start > 0:
+        cursor.goRight(span_start, False)
+    if span_length > 0:
+        cursor.goRight(span_length, True)
+    cursor.setString(replacement)
+
+    return {
+        "status": "applied",
+        "strategy_used": "replace_span_once",
+        "replaced_count": 1,
+        "matched_occurrences": matched,
+        "requested_occurrence": occurrence,
+    }
+
+
 def _apply_operation(doc: Any, op: dict[str, Any]) -> dict[str, Any]:
     op_type = str(op.get("type"))
 
@@ -204,6 +259,32 @@ def _apply_operation(doc: Any, op: dict[str, Any]) -> dict[str, Any]:
                 "replace": replacement,
                 "occurrence": occurrence,
                 "strategy_used": "replace_paragraph_text_once",
+            }
+        )
+        return details
+
+    if op_type == "replace_span_once":
+        find_text = str(op["find"])
+        occurrence = int(op.get("occurrence", 1))
+        span_start = int(op["span_start"])
+        span_length = int(op["span_length"])
+        replacement = str(op.get("replacement", ""))
+        details = _replace_span_once(
+            doc,
+            find_text=find_text,
+            occurrence=occurrence,
+            span_start=span_start,
+            span_length=span_length,
+            replacement=replacement,
+        )
+        details.update(
+            {
+                "type": op_type,
+                "find": find_text,
+                "occurrence": occurrence,
+                "span_start": span_start,
+                "span_length": span_length,
+                "replacement": replacement,
             }
         )
         return details

@@ -136,3 +136,79 @@ def test_parallel_uno_writes_are_serialized_by_lock(tmp_path: Path) -> None:
     merged = report.text
     assert "ALPHA beta gamma" in merged
     assert "DELTA epsilon zeta" in merged
+
+
+@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
+def test_uno_replace_span_once_inserts_without_deleting_suffix(tmp_path: Path) -> None:
+    doc_path = tmp_path / "uno-span-insert.docx"
+    doc = Document()
+    doc.add_paragraph("growth continued without saturation.")
+    doc.save(doc_path)
+
+    patch = {
+        "operations": [
+            {
+                "type": "replace_span_once",
+                "find": "growth continued without saturation",
+                "occurrence": 1,
+                "span_start": len("growth continued without "),
+                "span_length": 0,
+                "replacement": "clear ",
+            }
+        ]
+    }
+
+    outcome = uno_engine.apply_patch(
+        doc_path,
+        patch_data=patch,
+        author="Barry Brook",
+        track_changes=True,
+        dry_run=False,
+        fallback_reason="integration test replace_span_once insert",
+    )
+    assert outcome.engine == "uno"
+    assert outcome.changed
+
+    review = ooxml_engine.list_review(doc_path)
+    inserted = [item["text"] for item in review["revisions"] if item["type"] == "ins"]
+    deleted = [item["text"] for item in review["revisions"] if item["type"] == "del"]
+    assert "clear " in inserted
+    assert "saturation" not in deleted
+
+
+@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
+def test_uno_replace_span_once_deletes_hyphen_only(tmp_path: Path) -> None:
+    doc_path = tmp_path / "uno-span-delete.docx"
+    doc = Document()
+    doc.add_paragraph("under-representation remains common.")
+    doc.save(doc_path)
+
+    patch = {
+        "operations": [
+            {
+                "type": "replace_span_once",
+                "find": "under-representation",
+                "occurrence": 1,
+                "span_start": len("under"),
+                "span_length": 1,
+                "replacement": "",
+            }
+        ]
+    }
+
+    outcome = uno_engine.apply_patch(
+        doc_path,
+        patch_data=patch,
+        author="Barry Brook",
+        track_changes=True,
+        dry_run=False,
+        fallback_reason="integration test replace_span_once delete",
+    )
+    assert outcome.engine == "uno"
+    assert outcome.changed
+
+    review = ooxml_engine.list_review(doc_path)
+    inserted = [item["text"] for item in review["revisions"] if item["type"] == "ins"]
+    deleted = [item["text"] for item in review["revisions"] if item["type"] == "del"]
+    assert inserted == []
+    assert deleted == ["-"]

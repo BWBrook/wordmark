@@ -4,6 +4,7 @@
 This playbook helps a fresh agent combine domain judgment with Wordmark tooling to perform high-quality supervisory review on papers, chapters, and supplementary documents.
 
 The core principle is:
+- always start by reading the whole document, to understand the full context,
 - make precise tracked edits where confidence is high,
 - leave comments where author judgment is required,
 - keep every change auditable.
@@ -94,6 +95,7 @@ UNO payload now includes per-operation diagnostics:
 Operation details may also include:
 - `author_binding_postprocess` when `Unknown Author` revisions introduced by UNO are normalized to the requested author label
 - `uno_retry` metadata when low-hit global replacements are retried as targeted single replacements
+- `uno_precision_rewrite` metadata when fallback `replace_text_once` operations are narrowed to smaller spans before UNO apply
 
 ## Verification profile selection
 Use `business-docs` for release-quality, layout-sensitive sign-off.
