@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -410,3 +411,124 @@ def test_prepare_uno_precision_patch_avoids_partial_word_boundary(tmp_path: Path
     assert op["type"] == "replace_span_once"
     assert "regression" in op["replacement"]
     assert not op["replacement"].endswith(" r")
+
+
+def test_edit_apply_emits_interop_drift_and_risk_summary(sample_docx: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Second paragraph",
+                "replace": "Updated paragraph",
+            }
+        ]
+    }
+    patch_path = _write_patch(sample_docx, patch)
+
+    inspect_calls = {"count": 0}
+
+    def fake_preflight_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        return {
+            "operations": [
+                {
+                    "classification": "unsupported_high_risk",
+                    "reason_code": "risky_markup_detected",
+                }
+            ]
+        }
+
+    def fake_inspect(*args, **kwargs):  # noqa: ANN002, ANN003
+        inspect_calls["count"] += 1
+        if inspect_calls["count"] == 1:
+            return SimpleNamespace(text="Figure 2 shows accumulation.")
+        return SimpleNamespace(text="Figure 1 shows accumulation.")
+
+    def fake_ooxml_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        return OperationResult.now(
+            command="edit apply",
+            path=sample_docx,
+            engine="ooxml",
+            changed=True,
+            author="Barry Brook",
+            details={
+                "uno_precision_rewrite": {
+                    "rewritten_operations": 2,
+                }
+            },
+        )
+
+    monkeypatch.setattr(ooxml_engine, "preflight_patch", fake_preflight_patch)
+    monkeypatch.setattr(ooxml_engine, "inspect", fake_inspect)
+    monkeypatch.setattr(ooxml_engine, "apply_patch", fake_ooxml_apply_patch)
+
+    result = runner.invoke(app, ["edit", "apply", str(sample_docx), "--patch", str(patch_path), "--json"])
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    details = payload["operation"]["details"]
+    drift = details["interop_drift"]
+    summary = details["risk_summary"]
+
+    assert drift["detected"] is True
+    assert "figure_ref_shift" in drift["signals"]
+    assert drift["warning"] is True
+
+    assert summary["used_uno_fallback"] is False
+    assert summary["risky_operations_count"] == 1
+    assert summary["precision_rewrite_count"] == 2
+    assert summary["drift_check_enabled"] is True
+    assert summary["drift_warning_threshold"] == "low"
+    assert summary["drift_detected"] is True
+    assert summary["drift_warning"] is True
+    assert summary["drift_severity"] == "low"
+
+
+def test_edit_apply_can_disable_drift_and_risk_summary(sample_docx: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": "Second paragraph",
+                "replace": "Updated paragraph",
+            }
+        ]
+    }
+    patch_path = _write_patch(sample_docx, patch)
+
+    def fake_inspect(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("inspect should not be called when --no-drift-check is active")
+
+    def fake_ooxml_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
+        return OperationResult.now(
+            command="edit apply",
+            path=sample_docx,
+            engine="ooxml",
+            changed=True,
+            author="Barry Brook",
+            details={},
+        )
+
+    monkeypatch.setattr(ooxml_engine, "inspect", fake_inspect)
+    monkeypatch.setattr(ooxml_engine, "apply_patch", fake_ooxml_apply_patch)
+
+    result = runner.invoke(
+        app,
+        [
+            "edit",
+            "apply",
+            str(sample_docx),
+            "--patch",
+            str(patch_path),
+            "--no-drift-check",
+            "--no-emit-risk-summary",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    details = payload["operation"]["details"]
+    assert "interop_drift" not in details
+    assert "risk_summary" not in details

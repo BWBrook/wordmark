@@ -14,6 +14,7 @@ import typer
 
 from wordmark import __version__
 from wordmark.config import AppConfig, load_config
+from wordmark import interop_drift
 from wordmark.jsonio import dumps
 from wordmark.models import OperationResult
 from wordmark import ooxml_engine
@@ -510,6 +511,132 @@ def _should_retry_uno_low_hit(uno_payload: dict[str, Any]) -> bool:
     return int(summary.get("operations_without_hits", 0)) > 0
 
 
+def _count_risky_preflight_ops(preflight: dict[str, Any]) -> int:
+    operations = preflight.get("operations")
+    if not isinstance(operations, list):
+        return 0
+    risky = 0
+    for op in operations:
+        if not isinstance(op, dict):
+            continue
+        classification = str(op.get("classification"))
+        reason_code = str(op.get("reason_code"))
+        if classification == "unsupported_high_risk" or reason_code == "risky_markup_detected":
+            risky += 1
+    return risky
+
+
+def _used_uno_fallback(attempts: list[dict[str, Any]]) -> bool:
+    for attempt in attempts:
+        engine = str(attempt.get("engine"))
+        status = str(attempt.get("status"))
+        if engine == "uno" and status in {"applied", "retry_applied"}:
+            return True
+    return False
+
+
+def _precision_rewrite_count(result: OperationResult) -> int:
+    rewrite = result.details.get("uno_precision_rewrite")
+    if not isinstance(rewrite, dict):
+        return 0
+    try:
+        return int(rewrite.get("rewritten_operations", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _analyze_interop_drift(
+    *,
+    docx: Path,
+    before_text: str | None,
+    threshold: str,
+    dry_run: bool,
+) -> dict[str, Any]:
+    if dry_run:
+        return {
+            "detected": False,
+            "warning": False,
+            "warning_threshold": threshold,
+            "severity": "none",
+            "signals": [],
+            "changed_families": [],
+            "change_magnitude": 0,
+            "before_counts": {},
+            "after_counts": {},
+            "recommended_action": "Skipped drift analysis for dry-run.",
+            "analysis_skipped": True,
+            "analysis_reason": "dry_run",
+        }
+
+    if before_text is None:
+        return {
+            "detected": False,
+            "warning": False,
+            "warning_threshold": threshold,
+            "severity": "none",
+            "signals": [],
+            "changed_families": [],
+            "change_magnitude": 0,
+            "before_counts": {},
+            "after_counts": {},
+            "recommended_action": "Could not compute drift due missing baseline text snapshot.",
+            "analysis_failed": True,
+            "analysis_reason": "before_snapshot_missing",
+        }
+
+    try:
+        after_text = ooxml_engine.inspect(docx).text
+    except Exception as exc:  # pragma: no cover - defensive path
+        return {
+            "detected": False,
+            "warning": False,
+            "warning_threshold": threshold,
+            "severity": "none",
+            "signals": [],
+            "changed_families": [],
+            "change_magnitude": 0,
+            "before_counts": {},
+            "after_counts": {},
+            "recommended_action": "Could not compute drift; inspect after-snapshot failed.",
+            "analysis_failed": True,
+            "analysis_reason": "after_snapshot_failed",
+            "error": str(exc),
+        }
+
+    return interop_drift.analyze_reference_drift(
+        before_text,
+        after_text,
+        warning_threshold=threshold,
+    )
+
+
+def _build_risk_summary(
+    *,
+    preflight: dict[str, Any],
+    attempts: list[dict[str, Any]],
+    policy: dict[str, Any],
+    result: OperationResult,
+    drift_check_enabled: bool,
+    drift_threshold: str,
+) -> dict[str, Any]:
+    drift = result.details.get("interop_drift")
+    drift_detected = bool(isinstance(drift, dict) and drift.get("detected", False))
+    drift_warning = bool(isinstance(drift, dict) and drift.get("warning", False))
+    drift_severity = str(drift.get("severity", "none")) if isinstance(drift, dict) else "none"
+
+    return {
+        "used_uno_fallback": _used_uno_fallback(attempts),
+        "risky_operations_count": _count_risky_preflight_ops(preflight),
+        "precision_rewrite_count": _precision_rewrite_count(result),
+        "drift_check_enabled": drift_check_enabled,
+        "drift_warning_threshold": drift_threshold if drift_check_enabled else None,
+        "drift_detected": drift_detected,
+        "drift_warning": drift_warning,
+        "drift_severity": drift_severity,
+        "mode": str(policy.get("fidelity_mode", "")),
+    }
+
+
 def _write_review_sidecars(config: AppConfig, docx_path: Path, review_data: dict[str, Any]) -> dict[str, str]:
     if not config.sidecar.enabled:
         return {}
@@ -708,6 +835,21 @@ def edit_apply(
     ),
     preflight_only: bool = typer.Option(False, "--preflight-only", help="Classify operation strategy without writing."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Emit intended mutation without writing."),
+    drift_check: bool = typer.Option(
+        True,
+        "--drift-check/--no-drift-check",
+        help="Check cross-reference drift (Figure/Table/Eq/Appendix) after mutation.",
+    ),
+    drift_warning_threshold: str = typer.Option(
+        "low",
+        "--drift-warning-threshold",
+        help="low|moderate|high threshold for emitting drift warnings.",
+    ),
+    emit_risk_summary: bool = typer.Option(
+        True,
+        "--emit-risk-summary/--no-emit-risk-summary",
+        help="Emit risk summary metadata in operation details.",
+    ),
     config_path: Path | None = typer.Option(None, "--config", help="Path to wordmark config file."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
@@ -716,6 +858,11 @@ def edit_apply(
     resolved_author = _resolve_author(author, config)
     resolved_initials = _resolve_initials(initials, config)
     track = _resolve_track_changes(track_changes, config)
+    resolved_drift_threshold = _resolve_choice(
+        "drift_warning_threshold",
+        drift_warning_threshold,
+        {"low", "moderate", "high"},
+    )
     patch_data = json.loads(patch.read_text(encoding="utf-8"))
     policy = _resolve_edit_policy(
         config,
@@ -747,8 +894,15 @@ def edit_apply(
     attempts: list[dict[str, Any]] = []
     fallback_reason = ""
     uno_enabled = "uno" in config.engine_order
+    before_text_snapshot: str | None = None
 
     with _docx_operation_lock(docx):
+        if drift_check:
+            try:
+                before_text_snapshot = ooxml_engine.inspect(docx).text
+            except Exception:  # pragma: no cover - defensive diagnostics path
+                before_text_snapshot = None
+
         try:
             result = ooxml_engine.apply_patch(
                 docx,
@@ -878,6 +1032,14 @@ def edit_apply(
                                 )
                                 errors.append(f"comment_fallback: {comment_exc}")
 
+        if result is not None and drift_check:
+            result.details["interop_drift"] = _analyze_interop_drift(
+                docx=docx,
+                before_text=before_text_snapshot,
+                threshold=resolved_drift_threshold,
+                dry_run=dry_run,
+            )
+
     if result is None:
         _echo(
             {
@@ -890,6 +1052,16 @@ def edit_apply(
             json_output=True,
         )
         raise typer.Exit(code=1)
+
+    if emit_risk_summary:
+        result.details["risk_summary"] = _build_risk_summary(
+            preflight=preflight,
+            attempts=attempts,
+            policy=policy,
+            result=result,
+            drift_check_enabled=drift_check,
+            drift_threshold=resolved_drift_threshold,
+        )
 
     transcript_path = append_transcript(config, result)
     payload = {

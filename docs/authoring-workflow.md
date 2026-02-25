@@ -94,6 +94,23 @@ UNO fallback JSON includes per-operation diagnostics (`status`, `replaced_count`
 - `uno_retry` metadata if low-hit global operations are retried as targeted single replacements
 - `author_binding_postprocess` metadata when newly introduced `Unknown Author` revisions are normalized to the requested author
 - `uno_precision_rewrite` metadata when fallback `replace_text_once` operations are narrowed to minimal spans before UNO apply
+- `interop_drift` metadata when cross-reference families (Figure/Table/Eq/Appendix) shift between before/after text snapshots
+- `risk_summary` metadata with concise fallback and drift risk signals for downstream triage
+
+Drift/risk controls:
+```bash
+# default: drift check + risk summary on
+uv run wordmark edit apply docs/input.docx --patch patch.json --json
+
+# disable drift diagnostics
+uv run wordmark edit apply docs/input.docx --patch patch.json --no-drift-check --json
+
+# set warning sensitivity
+uv run wordmark edit apply docs/input.docx --patch patch.json --drift-warning-threshold high --json
+
+# disable risk summary block
+uv run wordmark edit apply docs/input.docx --patch patch.json --no-emit-risk-summary --json
+```
 
 Policy controls:
 ```bash

@@ -1,4 +1,4 @@
-# Wordmark Architecture (Phase 4)
+# Wordmark Architecture (Phase 5)
 
 ## Objective
 Provide a Linux-first, CLI-first workflow for editing `.docx` review state (comments + tracked changes) with controlled formatting risk and Git-friendly artifacts.
@@ -37,9 +37,15 @@ Wordmark uses a dual-engine mutation strategy:
 - Emits author-binding diagnostics and runs post-write normalization for newly introduced `Unknown Author` revisions.
 - Records fallback reason and optional low-hit retry metadata in operation details.
 
+3. Interop drift diagnostics (`src/wordmark/interop_drift.py`)
+- Text-snapshot analyzer for likely cross-reference drift after mutation.
+- Scans Figure/Table/Equation/Appendix mention patterns and reports family-level deltas.
+- Emits deterministic warning severity (`none|low|moderate|high`) and recommended action text.
+
 ## Core modules
 - `src/wordmark/cli.py`: command surface and engine orchestration.
 - `src/wordmark/docx_package.py`: byte-preserving OOXML ZIP access.
+- `src/wordmark/interop_drift.py`: cross-reference drift detection and severity scoring.
 - `src/wordmark/ooxml_engine.py`: inspect/comment/edit/review operations.
 - `src/wordmark/uno_engine.py`: UNO bridge, diagnostics, and author post-processing.
 - `src/wordmark/render.py`: DOCX -> PDF -> PNG rendering.
@@ -53,6 +59,8 @@ Edit strategy controls:
 - preflight classification (`--preflight-only`) before mutation
 - explicit fallback chain configuration (`on_unsupported`, `on_uno_fail`)
 - deterministic UNO low-hit retry for missed global replacements
+- interop drift checks with warning threshold controls
+- concise operation risk summary emission for downstream consumers
 - merge-back helper output (`review prepare-merge`) for Word desktop handoff
 
 ## Data and artifacts

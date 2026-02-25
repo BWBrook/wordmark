@@ -104,3 +104,9 @@
 - Context: Complex documents that route to UNO fallback (for example field-code/risky-markup paragraphs) were still producing broad clause-level tracked replacements even for tiny wording/punctuation edits.
 - Decision: Before UNO apply, rewrite eligible `replace_text_once` operations to `replace_span_once` operations anchored on the original matched text plus a precise in-match span (`span_start`, `span_length`, `replacement`) computed from prefix/suffix deltas.
 - Consequences: Fallback edits in risky-markup documents can express insertion-only, deletion-only, and punctuation-only tracked changes without replacing untouched surrounding text; rewrite diagnostics are recorded under `operation.details.uno_precision_rewrite` for auditability.
+
+## 2026-02-25 - ADR-018: Add interop drift diagnostics and compact risk summary to edit apply
+- Status: accepted
+- Context: Advanced review passes can succeed technically while still introducing subtle cross-reference drift risk (for example Figure/Table/Eq/Appx renumbering shifts), and operators need a fast machine-readable signal for when manual Word desktop validation should be prioritised.
+- Decision: Add a deterministic text-snapshot drift analyzer (`interop_drift`) for reference families (Figure/Table/Equation/Appendix), enable it by default in `edit apply` with explicit threshold control (`--drift-warning-threshold low|moderate|high`), and emit a compact `operation.details.risk_summary` block (fallback usage, risky preflight count, rewrite count, drift status/severity).
+- Consequences: Handoffs become more auditable and triage-friendly without changing mutation semantics; drift warnings remain advisory and trigger validation workflow, not automatic mutation strategy changes.

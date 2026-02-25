@@ -96,6 +96,13 @@ Operation details may also include:
 - `author_binding_postprocess` when `Unknown Author` revisions introduced by UNO are normalized to the requested author label
 - `uno_retry` metadata when low-hit global replacements are retried as targeted single replacements
 - `uno_precision_rewrite` metadata when fallback `replace_text_once` operations are narrowed to smaller spans before UNO apply
+- `interop_drift` metadata when Figure/Table/Equation/Appendix references changed between before/after snapshots
+- `risk_summary` metadata for quick triage of fallback risk (`used_uno_fallback`, risky op count, drift severity/warning)
+
+When `interop_drift.warning` is true:
+1. Treat the pass as provisionally complete, not release-ready.
+2. Run `review prepare-merge` and complete a Word desktop compare/combine check.
+3. Prioritise validation of all changed reference families reported in `interop_drift.changed_families`.
 
 ## Verification profile selection
 Use `business-docs` for release-quality, layout-sensitive sign-off.

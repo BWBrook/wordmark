@@ -1,4 +1,4 @@
-# Fidelity Policy (Phase 4)
+# Fidelity Policy (Phase 5)
 
 ## Scope
 This policy defines acceptance gates for Linux-native `.docx` review edits.
@@ -66,6 +66,20 @@ Use case:
 - If global replacements miss, CLI may perform one deterministic retry by converting missed `replace_text_global` operations to `replace_text_once`.
 - Retry metadata must be recorded under operation details; no silent strategy changes.
 
+## Interop drift diagnostics policy
+- `edit apply` should run cross-reference drift diagnostics by default.
+- Drift diagnostics track text-level changes in reference families:
+  - `figure`
+  - `table`
+  - `equation`
+  - `appendix`
+- Warning threshold is explicit and operator-controlled (`low|moderate|high`).
+- Drift output is advisory metadata only; it must not alter mutation behavior.
+- Operation output should include `risk_summary` for fast triage of:
+  - fallback path used (`used_uno_fallback`)
+  - risky preflight operation count
+  - drift severity and warning status
+
 ## Concurrency/write-safety policy
 - Mutating commands targeting the same `.docx` must be serialized with an exclusive per-file lock (`<docx>.wordmark.lock`).
 - Concurrent edits to one file without lock coordination are out of policy due to reproducible UNO store/write collisions.
@@ -93,4 +107,5 @@ Escalate to manual review when:
 - comment/reference integrity fails,
 - UNO fallback yields unexpectedly low hit rates,
 - UNO post-process reports unresolved unknown revision authors after normalization,
+- interop drift warning is emitted for moderate/high-severity cross-reference changes,
 - document complexity exceeds supported operation patterns.

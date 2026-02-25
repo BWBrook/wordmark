@@ -60,6 +60,22 @@ uv run wordmark edit apply <file.docx> --patch patch.json --fidelity-mode aggres
 
 UNO fallback responses now include per-operation diagnostics (`status`, `replaced_count`, `strategy_used`), and `edit apply` records deterministic low-hit retry attempts under `operation.details.uno_retry` when missed global operations are retried as targeted single replacements.
 
+`edit apply` also emits additive diagnostics by default:
+- `operation.details.interop_drift`: likely cross-reference drift signals (`Figure/Table/Eq/Appendix`) from before/after text snapshots.
+- `operation.details.risk_summary`: compact policy/risk snapshot (`used_uno_fallback`, risky preflight count, drift severity/warning, mode).
+
+Control flags:
+```bash
+# Disable drift diagnostics for a run
+uv run wordmark edit apply <file.docx> --patch patch.json --no-drift-check --json
+
+# Tighten drift warning threshold
+uv run wordmark edit apply <file.docx> --patch patch.json --drift-warning-threshold high --json
+
+# Disable risk summary emission
+uv run wordmark edit apply <file.docx> --patch patch.json --no-emit-risk-summary --json
+```
+
 ## Merge-Back Workflow
 For shared/online docs, keep agent edits in local copies and merge by human approval in Word desktop:
 ```bash
