@@ -171,8 +171,11 @@ uv run wordmark verify docs/before.docx docs/after.docx --profile review-edit --
 `verify` runs:
 - OOXML integrity checks
 - comment-reference consistency checks
+- compatibility namespace integrity checks (`compatibility_namespace_integrity`)
 - revision delta summary (`insert`, `delete`, `move_to`, `move_from`, `total`)
 - render diff checks with per-page artifacts
+
+If `compatibility_namespace_integrity.ok` is false, treat the output as invalid for Word handoff even if comments/revisions appear present.
 
 ## 6) Visual rendering
 ```bash

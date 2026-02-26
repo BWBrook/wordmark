@@ -101,3 +101,6 @@ Edit strategy controls:
 - UNO matching still relies on LibreOffice literal search behavior; phrase-level, context-aware patches remain preferred over long full-paragraph literals.
 - `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
 - `raw` text mode is intentionally lossy for reviewer readability in tracked documents; use it for diagnostics, not human handoff summaries.
+
+Verify gate notes:
+- verification now includes OOXML compatibility namespace integrity checks (for example `mc:Ignorable` token declarations) to catch Word recovery-risk files before handoff.

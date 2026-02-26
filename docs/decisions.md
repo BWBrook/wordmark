@@ -133,3 +133,9 @@
   4. Extend review accept/reject transforms to handle move revisions and clean orphan move range markers.
   5. Roll CLI JSON outputs (`inspect`, `review list`, `verify`) to schema v2 with explicit `schema_version: 2`.
 - Consequences: Reviewer-facing extraction now aligns with Word review behavior; move-revision attribution is consistent; machine-readable outputs are cleaner but intentionally break compatibility with pre-v2 revision field naming/counters.
+
+## 2026-02-26 - ADR-021: Add verify-time OOXML compatibility namespace guard
+- Status: accepted
+- Context: Word can show “unreadable content” recovery prompts even when comments/revisions are present if `word/document.xml` contains compatibility attributes (for example `mc:Ignorable`) that reference undeclared prefixes.
+- Decision: Add a verify gate (`compatibility_namespace_integrity`) that parses `word/document.xml`, inspects `mc:Ignorable` tokens, and fails verification when any referenced prefix is missing from namespace declarations.
+- Consequences: Corrupt-but-partially-readable outputs are caught before handoff; operators get explicit diagnostics (`missing_prefixes`) and a deterministic fail condition in both strict and review-edit profiles.

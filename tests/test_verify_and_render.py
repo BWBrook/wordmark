@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from types import SimpleNamespace
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from PIL import Image
 from typer.testing import CliRunner
@@ -13,6 +15,34 @@ from wordmark.cli import app
 from wordmark.render import render_docx
 from wordmark import verify as verify_mod
 from wordmark.verify import verify_docx
+
+
+def _inject_ignorable_prefix_mismatch(path: Path) -> None:
+    with ZipFile(path, "r") as zin:
+        parts = {name: zin.read(name) for name in zin.namelist()}
+
+    xml = parts["word/document.xml"].decode("utf-8")
+    root_match = re.search(r"<w:document\b[^>]*>", xml)
+    assert root_match is not None
+    root_tag = root_match.group(0)
+
+    if 'xmlns:mc="' not in root_tag:
+        root_tag = root_tag[:-1] + ' xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">'
+
+    root_tag = re.sub(r'\s+xmlns:w14="[^"]*"', "", root_tag)
+    root_tag = re.sub(r'\s+xmlns:wp14="[^"]*"', "", root_tag)
+
+    if re.search(r'\b(?:mc|ns\d+):Ignorable="[^"]*"', root_tag):
+        root_tag = re.sub(r'\b(?:mc|ns\d+):Ignorable="[^"]*"', 'mc:Ignorable="w14 wp14"', root_tag, count=1)
+    else:
+        root_tag = root_tag[:-1] + ' mc:Ignorable="w14 wp14">'
+
+    xml = xml[: root_match.start()] + root_tag + xml[root_match.end() :]
+    parts["word/document.xml"] = xml.encode("utf-8")
+
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as zout:
+        for name in sorted(parts.keys()):
+            zout.writestr(name, parts[name])
 
 
 def test_render_produces_pdf_and_pngs(sample_docx: Path, tmp_path: Path) -> None:
@@ -101,6 +131,11 @@ def test_verify_review_edit_profile_reasoning(sample_docx: Path, tmp_path: Path)
     assert reasoning["profile"] == "review-edit"
     assert reasoning["render_diff_threshold"] == 0.12
     assert reasoning["max_page_growth"] == 2
+    assert (
+        reasoning["pass_rule"]
+        == "comment_integrity.ok and compatibility_namespace_integrity.ok and render_diff.ok"
+    )
+    assert result.checks["compatibility_namespace_integrity"]["ok"] is True
     revisions = result.checks["revisions"]
     assert set(revisions["before"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
     assert set(revisions["after"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
@@ -127,3 +162,20 @@ def test_cli_verify_emits_schema_v2(sample_docx: Path, tmp_path: Path) -> None:
         "move_from",
         "total",
     }
+
+
+def test_verify_fails_on_ignorable_prefix_mismatch(sample_docx: Path, tmp_path: Path) -> None:
+    before = tmp_path / "before.docx"
+    after = tmp_path / "after.docx"
+    shutil.copy2(sample_docx, before)
+    shutil.copy2(sample_docx, after)
+
+    _inject_ignorable_prefix_mismatch(after)
+
+    cfg = load_config(Path("wordmark.yaml"))
+    result = verify_docx(before, after, profile="business-docs", config=cfg)
+
+    assert result.passed is False
+    compat = result.checks["compatibility_namespace_integrity"]
+    assert compat["ok"] is False
+    assert compat["missing_prefixes"] == ["w14", "wp14"]

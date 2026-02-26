@@ -14,8 +14,9 @@ Target corpus includes:
 Automated gates:
 1. Package/OOXML integrity.
 2. Comment-reference integrity.
-3. Revision accounting.
-4. Render diff gate with strict limits:
+3. OOXML compatibility namespace integrity (for example `mc:Ignorable` prefixes must be declared).
+4. Revision accounting.
+5. Render diff gate with strict limits:
 - threshold: `0.02`
 - page growth allowance: `0`
 - page count must remain unchanged
@@ -27,8 +28,9 @@ Use case:
 Automated gates:
 1. Package/OOXML integrity.
 2. Comment-reference integrity.
-3. Revision accounting.
-4. Render diff gate with review-focused tolerance:
+3. OOXML compatibility namespace integrity (for example `mc:Ignorable` prefixes must be declared).
+4. Revision accounting.
+5. Render diff gate with review-focused tolerance:
 - threshold: `0.12`
 - page growth allowance: `2`
 - bounded growth allowed for active tracked-edit rounds
@@ -108,6 +110,7 @@ Use case:
 Escalate to manual review when:
 - render diff gate fails,
 - comment/reference integrity fails,
+- compatibility namespace integrity fails (for example undeclared prefixes referenced in `mc:Ignorable`),
 - UNO fallback yields unexpectedly low hit rates,
 - UNO post-process reports unresolved unknown revision authors after normalization,
 - interop drift warning is emitted for moderate/high-severity cross-reference changes,

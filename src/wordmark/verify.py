@@ -19,6 +19,7 @@ from wordmark.sidecar import hash_bytes
 
 DOC_PART = "word/document.xml"
 COMMENTS_PART = "word/comments.xml"
+MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 
 
 @dataclass(slots=True)
@@ -30,6 +31,10 @@ class VerifyResult:
 
 def _w(local: str) -> str:
     return f"{{{W_NS}}}{local}"
+
+
+def _mc(local: str) -> str:
+    return f"{{{MC_NS}}}{local}"
 
 
 def _comment_integrity(pkg: DocxPackage) -> dict[str, Any]:
@@ -73,6 +78,25 @@ def _revision_stats(pkg: DocxPackage) -> dict[str, int]:
         "move_to": move_to,
         "move_from": move_from,
         "total": inserted + deleted + move_to + move_from,
+    }
+
+
+def _compatibility_namespace_integrity(pkg: DocxPackage) -> dict[str, Any]:
+    doc_root = pkg.read_xml(DOC_PART)
+    ignorable_raw = doc_root.get(_mc("Ignorable"))
+    ignorable_tokens = [token for token in (ignorable_raw or "").split() if token]
+
+    declared_prefixes = [prefix for prefix in doc_root.nsmap.keys() if prefix]
+    missing_prefixes: list[str] = []
+    for token in ignorable_tokens:
+        if token not in doc_root.nsmap and token not in missing_prefixes:
+            missing_prefixes.append(token)
+
+    return {
+        "ok": len(missing_prefixes) == 0,
+        "ignorable_tokens": ignorable_tokens,
+        "missing_prefixes": missing_prefixes,
+        "declared_prefixes": sorted(declared_prefixes),
     }
 
 
@@ -195,6 +219,7 @@ def verify_docx(
         )
 
     comment_integrity = _comment_integrity(after_pkg)
+    compatibility_namespace_integrity = _compatibility_namespace_integrity(after_pkg)
     before_revs = _revision_stats(before_pkg)
     after_revs = _revision_stats(after_pkg)
 
@@ -216,7 +241,7 @@ def verify_docx(
             if profile == "business-docs"
             else "review-oriented gate for iterative tracked-edit/comment workflows"
         ),
-        "pass_rule": "comment_integrity.ok and render_diff.ok",
+        "pass_rule": "comment_integrity.ok and compatibility_namespace_integrity.ok and render_diff.ok",
     }
 
     checks = {
@@ -224,6 +249,7 @@ def verify_docx(
         "profile_reasoning": profile_reasoning,
         "manifest": manifest,
         "comment_integrity": comment_integrity,
+        "compatibility_namespace_integrity": compatibility_namespace_integrity,
         "revisions": {
             "before": before_revs,
             "after": after_revs,
@@ -238,7 +264,7 @@ def verify_docx(
         "render_diff": render_diff,
     }
 
-    passed = bool(comment_integrity["ok"] and render_diff["ok"])
+    passed = bool(comment_integrity["ok"] and compatibility_namespace_integrity["ok"] and render_diff["ok"])
     return VerifyResult(passed=passed, profile=profile, checks=checks)
 
 
