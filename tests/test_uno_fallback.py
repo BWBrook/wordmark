@@ -57,7 +57,7 @@ def test_uno_fallback_replace_text_global(tmp_path: Path) -> None:
     assert outcome.changed
 
     report = ooxml_engine.inspect(doc_path)
-    assert "Fallback" in report.text
+    assert "Fallback" in report.text_value
 
 
 @pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
@@ -92,7 +92,7 @@ def test_uno_fallback_replace_text_once_occurrence_and_author(tmp_path: Path) ->
     assert outcome.details["uno"]["operation_results"][0]["strategy_used"] == "replace_text_once"
 
     report = ooxml_engine.inspect(doc_path)
-    lines = report.text.splitlines()
+    lines = report.text_value.splitlines()
     assert "Draft sentence in first paragraph." in lines
     assert "Final sentence in second paragraph." in lines
     assert any(rev.author == "Barry Brook" for rev in report.revisions)
@@ -133,7 +133,7 @@ def test_parallel_uno_writes_are_serialized_by_lock(tmp_path: Path) -> None:
     assert payload2["operation"]["engine"] == "uno"
 
     report = ooxml_engine.inspect(doc_path)
-    merged = report.text
+    merged = report.text_value
     assert "ALPHA beta gamma" in merged
     assert "DELTA epsilon zeta" in merged
 
@@ -170,8 +170,8 @@ def test_uno_replace_span_once_inserts_without_deleting_suffix(tmp_path: Path) -
     assert outcome.changed
 
     review = ooxml_engine.list_review(doc_path)
-    inserted = [item["text"] for item in review["revisions"] if item["type"] == "ins"]
-    deleted = [item["text"] for item in review["revisions"] if item["type"] == "del"]
+    inserted = [item["text"] for item in review["revisions"] if item["type"] == "insert"]
+    deleted = [item["text"] for item in review["revisions"] if item["type"] == "delete"]
     assert "clear " in inserted
     assert "saturation" not in deleted
 
@@ -208,7 +208,7 @@ def test_uno_replace_span_once_deletes_hyphen_only(tmp_path: Path) -> None:
     assert outcome.changed
 
     review = ooxml_engine.list_review(doc_path)
-    inserted = [item["text"] for item in review["revisions"] if item["type"] == "ins"]
-    deleted = [item["text"] for item in review["revisions"] if item["type"] == "del"]
+    inserted = [item["text"] for item in review["revisions"] if item["type"] == "insert"]
+    deleted = [item["text"] for item in review["revisions"] if item["type"] == "delete"]
     assert inserted == []
     assert deleted == ["-"]

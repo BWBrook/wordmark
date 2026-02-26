@@ -21,6 +21,9 @@ CONTENT_TYPES_PART = "[Content_Types].xml"
 COMMENTS_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
 CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 COMMENTS_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"
+TEXT_MODE_REVIEW_VISIBLE = "review-visible"
+TEXT_MODE_RAW = "raw"
+TEXT_MODES = {TEXT_MODE_REVIEW_VISIBLE, TEXT_MODE_RAW}
 
 
 class OoxmlUnsupportedOperation(RuntimeError):
@@ -61,8 +64,25 @@ def _text_of(element: etree._Element) -> str:
     return "".join(parts)
 
 
-def _paragraph_text(paragraph: etree._Element) -> str:
-    return "".join(paragraph.xpath(".//w:t/text()", namespaces=NSMAP))
+def _paragraph_text(paragraph: etree._Element, *, text_mode: str = TEXT_MODE_REVIEW_VISIBLE) -> str:
+    if text_mode not in TEXT_MODES:
+        raise ValueError(f"Unsupported text_mode={text_mode!r}; expected one of {sorted(TEXT_MODES)}")
+
+    nodes = paragraph.xpath(".//w:t | .//w:delText", namespaces=NSMAP)
+    parts: list[str] = []
+    for node in nodes:
+        if text_mode == TEXT_MODE_REVIEW_VISIBLE:
+            hidden = any(ancestor.tag in {_w("del"), _w("moveFrom")} for ancestor in node.iterancestors())
+            if hidden:
+                continue
+        parts.append(node.text or "")
+
+    return "".join(parts)
+
+
+def _document_text(document_root: etree._Element, *, text_mode: str) -> str:
+    paragraphs = document_root.xpath(".//w:body//w:p", namespaces=NSMAP)
+    return "\n".join(_paragraph_text(paragraph, text_mode=text_mode) for paragraph in paragraphs)
 
 
 def _normalize_whitespace_tag(runish: etree._Element) -> None:
@@ -88,7 +108,7 @@ def _body_paragraphs(document_root: etree._Element) -> list[etree._Element]:
 def _paragraph_at(paragraphs: list[etree._Element], idx: int) -> str:
     if idx < 0 or idx >= len(paragraphs):
         return ""
-    return _paragraph_text(paragraphs[idx])
+    return _paragraph_text(paragraphs[idx], text_mode=TEXT_MODE_REVIEW_VISIBLE)
 
 
 def _normalize_anchor(
@@ -614,12 +634,11 @@ def _replace_paragraph_content(
     }
 
 
-def inspect(path: Path) -> InspectReport:
+def inspect(path: Path, *, text_mode: str = TEXT_MODE_REVIEW_VISIBLE) -> InspectReport:
     pkg = DocxPackage.open(path)
     doc_root = pkg.read_xml(DOC_PART)
 
     paragraphs = doc_root.xpath(".//w:body//w:p", namespaces=NSMAP)
-    paragraph_texts = [_paragraph_text(p) for p in paragraphs]
 
     comments: list[CommentRecord] = []
     if pkg.has_part(COMMENTS_PART):
@@ -638,39 +657,44 @@ def inspect(path: Path) -> InspectReport:
             )
 
     revisions: list[RevisionRecord] = []
-    for ins in doc_root.findall(".//" + _w("ins")):
+    revision_type_by_tag = {
+        _w("ins"): "insert",
+        _w("del"): "delete",
+        _w("moveTo"): "move_to",
+        _w("moveFrom"): "move_from",
+    }
+    revision_nodes = doc_root.xpath(".//w:ins | .//w:del | .//w:moveTo | .//w:moveFrom", namespaces=NSMAP)
+    for item in revision_nodes:
+        revision_type = revision_type_by_tag.get(item.tag)
+        if revision_type is None:
+            continue
         revisions.append(
             RevisionRecord(
-                rev_type="ins",
-                author=ins.get(_w_attr("author")),
-                created_at=ins.get(_w_attr("date")),
-                text=_text_of(ins),
-            )
-        )
-    for deleted in doc_root.findall(".//" + _w("del")):
-        revisions.append(
-            RevisionRecord(
-                rev_type="del",
-                author=deleted.get(_w_attr("author")),
-                created_at=deleted.get(_w_attr("date")),
-                text=_text_of(deleted),
+                type=revision_type,
+                revision_id=item.get(_w_attr("id")),
+                author=item.get(_w_attr("author")),
+                created_at=item.get(_w_attr("date")),
+                text=_text_of(item),
             )
         )
 
     return InspectReport(
         path=path,
         paragraph_count=len(paragraphs),
-        text="\n".join(paragraph_texts),
+        text_mode=text_mode,
+        text_value=_document_text(doc_root, text_mode=text_mode),
         comments=comments,
         revisions=revisions,
     )
 
 
-def list_review(path: Path) -> dict[str, Any]:
-    report = inspect(path)
+def list_review(path: Path, *, text_mode: str = TEXT_MODE_REVIEW_VISIBLE) -> dict[str, Any]:
+    report = inspect(path, text_mode=text_mode)
     return {
         "path": str(path),
         "paragraph_count": report.paragraph_count,
+        "text_mode": report.text_mode,
+        "text_value": report.text_value,
         "comments": [
             {
                 "id": c.comment_id,
@@ -683,7 +707,8 @@ def list_review(path: Path) -> dict[str, Any]:
         ],
         "revisions": [
             {
-                "type": r.rev_type,
+                "type": r.type,
+                "revision_id": r.revision_id,
                 "author": r.author,
                 "created_at": r.created_at,
                 "text": r.text,
@@ -1291,8 +1316,14 @@ def _unwrap(parent: etree._Element, element: etree._Element, *, normalize_delete
 
 
 def _transform_revisions(doc_root: etree._Element, *, mode: str, author: str | None) -> dict[str, int]:
-    transformed = {"ins": 0, "del": 0}
-    candidates = doc_root.xpath(".//w:ins | .//w:del", namespaces=NSMAP)
+    transformed = {"insert": 0, "delete": 0, "move_to": 0, "move_from": 0}
+    revision_type_by_tag = {
+        _w("ins"): "insert",
+        _w("del"): "delete",
+        _w("moveTo"): "move_to",
+        _w("moveFrom"): "move_from",
+    }
+    candidates = doc_root.xpath(".//w:ins | .//w:del | .//w:moveTo | .//w:moveFrom", namespaces=NSMAP)
     for rev in candidates:
         if not _author_matches(rev, author):
             continue
@@ -1301,20 +1332,59 @@ def _transform_revisions(doc_root: etree._Element, *, mode: str, author: str | N
             continue
 
         if mode == "accept":
-            if rev.tag == _w("ins"):
+            if rev.tag in {_w("ins"), _w("moveTo")}:
                 _unwrap(parent, rev, normalize_deleted=False)
-                transformed["ins"] += 1
-            elif rev.tag == _w("del"):
+                transformed[revision_type_by_tag[rev.tag]] += 1
+            elif rev.tag in {_w("del"), _w("moveFrom")}:
                 parent.remove(rev)
-                transformed["del"] += 1
+                transformed[revision_type_by_tag[rev.tag]] += 1
         else:
-            if rev.tag == _w("ins"):
+            if rev.tag in {_w("ins"), _w("moveTo")}:
                 parent.remove(rev)
-                transformed["ins"] += 1
+                transformed[revision_type_by_tag[rev.tag]] += 1
             elif rev.tag == _w("del"):
                 _unwrap(parent, rev, normalize_deleted=True)
-                transformed["del"] += 1
+                transformed[revision_type_by_tag[rev.tag]] += 1
+            elif rev.tag == _w("moveFrom"):
+                _unwrap(parent, rev, normalize_deleted=False)
+                transformed[revision_type_by_tag[rev.tag]] += 1
     return transformed
+
+
+def _cleanup_orphan_move_ranges(doc_root: etree._Element) -> dict[str, int]:
+    remaining_move_to_ids = {
+        item.get(_w_attr("id"))
+        for item in doc_root.xpath(".//w:moveTo", namespaces=NSMAP)
+        if item.get(_w_attr("id")) is not None
+    }
+    remaining_move_from_ids = {
+        item.get(_w_attr("id"))
+        for item in doc_root.xpath(".//w:moveFrom", namespaces=NSMAP)
+        if item.get(_w_attr("id")) is not None
+    }
+
+    removed = {"move_to_range": 0, "move_from_range": 0}
+    for node in doc_root.xpath(".//w:moveToRangeStart | .//w:moveToRangeEnd", namespaces=NSMAP):
+        range_id = node.get(_w_attr("id"))
+        if range_id in remaining_move_to_ids:
+            continue
+        parent = node.getparent()
+        if parent is None:
+            continue
+        parent.remove(node)
+        removed["move_to_range"] += 1
+
+    for node in doc_root.xpath(".//w:moveFromRangeStart | .//w:moveFromRangeEnd", namespaces=NSMAP):
+        range_id = node.get(_w_attr("id"))
+        if range_id in remaining_move_from_ids:
+            continue
+        parent = node.getparent()
+        if parent is None:
+            continue
+        parent.remove(node)
+        removed["move_from_range"] += 1
+
+    return removed
 
 
 def review_action(
@@ -1331,7 +1401,8 @@ def review_action(
     pkg = DocxPackage.open(path)
     doc_root = pkg.read_xml(DOC_PART)
     transformed = _transform_revisions(doc_root, mode=mode, author=author)
-    changed = any(v > 0 for v in transformed.values())
+    cleaned_ranges = _cleanup_orphan_move_ranges(doc_root)
+    changed = any(v > 0 for v in transformed.values()) or any(v > 0 for v in cleaned_ranges.values())
 
     result = OperationResult.now(
         command=f"review {mode}",
@@ -1342,6 +1413,7 @@ def review_action(
         details={
             "filter_author": author,
             "transformed": transformed,
+            "cleaned_move_ranges": cleaned_ranges,
             "dry_run": dry_run,
         },
     )

@@ -41,6 +41,8 @@ Use case:
 - In strict mode, tracked paragraph rewrite fallback is disabled.
 - Localized replacements must compute common prefix/suffix and emit minimal middle-segment `w:del`/`w:ins` deltas where safe.
 - `replace_paragraph_text` must attempt localized full-string replacement before any tracked paragraph rewrite fallback.
+- Revision accounting and reviewer-facing extraction must treat move revisions (`w:moveTo`, `w:moveFrom`) as first-class tracked changes.
+- Default inspection mode is `review-visible` (exclude deleted/moved-from text); raw mode is for diagnostics only.
 - Strategy chain for unsupported OOXML localized edits:
   1. OOXML strict attempt
   2. UNO fallback attempt
@@ -61,6 +63,7 @@ Use case:
 - UNO output must remain auditable through `operation_results` diagnostics.
 - UNO payload must report `author_binding_status` for track-change attribution observability.
 - If UNO introduces revisions with unresolved author fields, post-process normalization must bind newly introduced `Unknown Author` revisions to the requested author and record `author_binding_postprocess`.
+- Unknown-author normalization must cover `w:ins`, `w:del`, `w:moveTo`, and `w:moveFrom`.
 - Before UNO apply, eligible `replace_text_once` operations should be rewritten to `replace_span_once` with explicit in-match span metadata (`span_start`, `span_length`, `replacement`) so only the intended substring is mutated inside the matched phrase.
 - Rewrite outcomes must be recorded as `uno_precision_rewrite`.
 - If global replacements miss, CLI may perform one deterministic retry by converting missed `replace_text_global` operations to `replace_text_once`.

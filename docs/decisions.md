@@ -120,3 +120,16 @@
   3. For operations with 2-3 separated islands (`occurrence=1`), emit a sequence of deterministic `replace_span_once` steps, each anchored to the evolving intermediate phrase.
   4. Fall back to the existing single-span rewrite for all other shapes.
 - Consequences: Multi-point edits now preserve unchanged middle text in tracked changes more often; aggressive splitting is avoided for dense transformations (for example many case/hyphen/token shifts), preserving prior stable behavior.
+
+## 2026-02-26 - ADR-020: Promote move revisions to first-class review semantics and schema v2
+- Status: accepted
+- Context: Advanced manuscript runs exposed two fidelity gaps:
+  1. UNO fallback could leave `Unknown Author` on `w:moveTo`/`w:moveFrom` revisions.
+  2. Text extraction used for inspect/drift could over-report by concatenating both move-source and move-destination text.
+- Decision:
+  1. Treat move revisions as first-class tracked changes across inspect/review/verify outputs (`insert`, `delete`, `move_to`, `move_from`).
+  2. Make `review-visible` text extraction the default for inspect/review/diff snapshots, with explicit `raw` mode for diagnostics.
+  3. Expand UNO unknown-author postprocessing to cover `w:moveTo` and `w:moveFrom`.
+  4. Extend review accept/reject transforms to handle move revisions and clean orphan move range markers.
+  5. Roll CLI JSON outputs (`inspect`, `review list`, `verify`) to schema v2 with explicit `schema_version: 2`.
+- Consequences: Reviewer-facing extraction now aligns with Word review behavior; move-revision attribution is consistent; machine-readable outputs are cleaner but intentionally break compatibility with pre-v2 revision field naming/counters.

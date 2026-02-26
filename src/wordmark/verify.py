@@ -65,7 +65,15 @@ def _revision_stats(pkg: DocxPackage) -> dict[str, int]:
     doc_root = pkg.read_xml(DOC_PART)
     inserted = len(doc_root.xpath(".//w:ins", namespaces=NSMAP))
     deleted = len(doc_root.xpath(".//w:del", namespaces=NSMAP))
-    return {"ins": inserted, "del": deleted}
+    move_to = len(doc_root.xpath(".//w:moveTo", namespaces=NSMAP))
+    move_from = len(doc_root.xpath(".//w:moveFrom", namespaces=NSMAP))
+    return {
+        "insert": inserted,
+        "delete": deleted,
+        "move_to": move_to,
+        "move_from": move_from,
+        "total": inserted + deleted + move_to + move_from,
+    }
 
 
 def _page_diff_ratio(before_png: Path, after_png: Path, *, diff_output: Path | None = None) -> float:
@@ -220,8 +228,11 @@ def verify_docx(
             "before": before_revs,
             "after": after_revs,
             "delta": {
-                "ins": after_revs["ins"] - before_revs["ins"],
-                "del": after_revs["del"] - before_revs["del"],
+                "insert": after_revs["insert"] - before_revs["insert"],
+                "delete": after_revs["delete"] - before_revs["delete"],
+                "move_to": after_revs["move_to"] - before_revs["move_to"],
+                "move_from": after_revs["move_from"] - before_revs["move_from"],
+                "total": after_revs["total"] - before_revs["total"],
             },
         },
         "render_diff": render_diff,

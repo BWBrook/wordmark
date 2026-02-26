@@ -509,8 +509,8 @@ def test_edit_apply_emits_interop_drift_and_risk_summary(sample_docx: Path, monk
     def fake_inspect(*args, **kwargs):  # noqa: ANN002, ANN003
         inspect_calls["count"] += 1
         if inspect_calls["count"] == 1:
-            return SimpleNamespace(text="Figure 2 shows accumulation.")
-        return SimpleNamespace(text="Figure 1 shows accumulation.")
+            return SimpleNamespace(text_value="Figure 2 shows accumulation.")
+        return SimpleNamespace(text_value="Figure 1 shows accumulation.")
 
     def fake_ooxml_apply_patch(*args, **kwargs):  # noqa: ANN002, ANN003
         return OperationResult.now(

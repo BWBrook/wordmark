@@ -40,9 +40,10 @@ Examples:
 ## Recommended workflow
 1. Inspect baseline:
 ```bash
-uv run wordmark inspect <docx> --json
-uv run wordmark review list <docx> --json
+uv run wordmark inspect <docx> --text-mode review-visible --json
+uv run wordmark review list <docx> --text-mode review-visible --json
 ```
+Use `--text-mode raw` only for low-level diagnostics when you need to inspect full tracked XML text footprints.
 2. Build a review plan from document structure:
 - quick language edits (grammar/clarity)
 - medium rewrites (sentence tightening)
@@ -132,3 +133,14 @@ Before declaring a document ready for user review:
 3. Report verify profile and pass/fail outcome.
 4. Flag any unresolved limitations (for example fallback misses or manual Word desktop checks).
 5. Keep artifacts/transcript available unless user requested cleanup.
+
+## Revision semantics reminder
+Wordmark revision outputs use normalized types:
+- `insert`
+- `delete`
+- `move_to`
+- `move_from`
+
+For review accept/reject:
+- accept keeps inserts and move destinations, removes deletions and move sources
+- reject removes inserts and move destinations, restores deletions and move sources

@@ -27,7 +27,8 @@ class CommentRecord:
 
 @dataclass(slots=True)
 class RevisionRecord:
-    rev_type: str
+    type: str
+    revision_id: str | None
     author: str | None
     created_at: str | None
     text: str
@@ -37,7 +38,8 @@ class RevisionRecord:
 class InspectReport:
     path: Path
     paragraph_count: int
-    text: str
+    text_mode: str
+    text_value: str
     comments: list[CommentRecord] = field(default_factory=list)
     revisions: list[RevisionRecord] = field(default_factory=list)
 

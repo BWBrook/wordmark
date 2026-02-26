@@ -19,6 +19,13 @@ from wordmark.docx_package import DocxPackage
 from wordmark.models import OperationResult
 
 DOC_PART = "word/document.xml"
+_REVISION_SELECTOR = ".//w:ins | .//w:del | .//w:moveTo | .//w:moveFrom"
+_REVISION_TYPE_BY_TAG = {
+    f"{{{W_NS}}}ins": "insert",
+    f"{{{W_NS}}}del": "delete",
+    f"{{{W_NS}}}moveTo": "move_to",
+    f"{{{W_NS}}}moveFrom": "move_from",
+}
 
 
 class UnoEngineError(RuntimeError):
@@ -46,7 +53,7 @@ def _revision_signature(element: Any) -> tuple[str, str | None, str | None, str]
 def _capture_revision_counter(path: Path) -> Counter[tuple[str, str | None, str | None, str]]:
     pkg = DocxPackage.open(path)
     root = pkg.read_xml(DOC_PART)
-    revisions = root.xpath(".//w:ins | .//w:del", namespaces=NSMAP)
+    revisions = root.xpath(_REVISION_SELECTOR, namespaces=NSMAP)
     return Counter(_revision_signature(item) for item in revisions)
 
 
@@ -58,29 +65,37 @@ def _normalize_unknown_revision_authors(
 ) -> dict[str, Any]:
     pkg = DocxPackage.open(path)
     root = pkg.read_xml(DOC_PART)
-    revisions = root.xpath(".//w:ins | .//w:del", namespaces=NSMAP)
+    revisions = root.xpath(_REVISION_SELECTOR, namespaces=NSMAP)
 
     working_counter = Counter(before_counter)
     normalized = 0
     untouched_unknown = 0
     new_revision_count = 0
+    new_revision_type_counts: Counter[str] = Counter()
+    normalized_by_type: Counter[str] = Counter()
+    remaining_unknown_by_type: Counter[str] = Counter()
 
     for revision in revisions:
+        revision_type = _REVISION_TYPE_BY_TAG.get(str(revision.tag), "unknown")
         signature = _revision_signature(revision)
         if working_counter[signature] > 0:
             working_counter[signature] -= 1
             continue
 
         new_revision_count += 1
+        new_revision_type_counts[revision_type] += 1
         author = revision.get(_w("author"))
         if author in {None, "", "Unknown Author"}:
             revision.set(_w("author"), requested_author)
             normalized += 1
+            normalized_by_type[revision_type] += 1
 
     for revision in revisions:
+        revision_type = _REVISION_TYPE_BY_TAG.get(str(revision.tag), "unknown")
         author = revision.get(_w("author"))
         if author in {None, "", "Unknown Author"}:
             untouched_unknown += 1
+            remaining_unknown_by_type[revision_type] += 1
 
     if normalized > 0:
         pkg.write_xml(DOC_PART, root)
@@ -89,8 +104,26 @@ def _normalize_unknown_revision_authors(
     return {
         "requested_author": requested_author,
         "new_revision_count": new_revision_count,
+        "new_revision_type_counts": {
+            "insert": int(new_revision_type_counts.get("insert", 0)),
+            "delete": int(new_revision_type_counts.get("delete", 0)),
+            "move_to": int(new_revision_type_counts.get("move_to", 0)),
+            "move_from": int(new_revision_type_counts.get("move_from", 0)),
+        },
         "normalized_unknown_authors": normalized,
+        "normalized_unknown_by_type": {
+            "insert": int(normalized_by_type.get("insert", 0)),
+            "delete": int(normalized_by_type.get("delete", 0)),
+            "move_to": int(normalized_by_type.get("move_to", 0)),
+            "move_from": int(normalized_by_type.get("move_from", 0)),
+        },
         "remaining_unknown_authors": untouched_unknown,
+        "remaining_unknown_by_type": {
+            "insert": int(remaining_unknown_by_type.get("insert", 0)),
+            "delete": int(remaining_unknown_by_type.get("delete", 0)),
+            "move_to": int(remaining_unknown_by_type.get("move_to", 0)),
+            "move_from": int(remaining_unknown_by_type.get("move_from", 0)),
+        },
         "normalized": normalized > 0,
     }
 

@@ -19,7 +19,19 @@ uv run wordmark --help
 ```bash
 uv run wordmark inspect docs/input.docx --json
 ```
-This emits paragraph/comment/revision state and (by default) writes sidecar review artifacts.
+Default inspection text mode is reviewer-visible (`review-visible`), which hides deleted and moved-from text:
+```bash
+uv run wordmark inspect docs/input.docx --text-mode review-visible --json
+```
+Use raw extraction for diagnostics:
+```bash
+uv run wordmark inspect docs/input.docx --text-mode raw --json
+```
+JSON outputs for `inspect`, `review list`, and `verify` include `schema_version: 2`.
+`inspect` report payload includes:
+- `text_mode`
+- `text_value`
+- revision entries with `type` in `{insert, delete, move_to, move_from}`.
 
 ## 2) Add comments
 ```bash
@@ -131,12 +143,19 @@ List:
 ```bash
 uv run wordmark review list docs/input.docx --json
 ```
+Or inspect raw revision-adjacent text extraction:
+```bash
+uv run wordmark review list docs/input.docx --text-mode raw --json
+```
 
 Accept/reject revisions:
 ```bash
 uv run wordmark review accept docs/input.docx --author "Barry Brook" --json
 uv run wordmark review reject docs/input.docx --all --json
 ```
+Move revisions are handled explicitly:
+- accept: keep `move_to`, remove `move_from`
+- reject: remove `move_to`, keep `move_from`
 
 Prepare Word desktop compare/combine handoff:
 ```bash
@@ -152,7 +171,7 @@ uv run wordmark verify docs/before.docx docs/after.docx --profile review-edit --
 `verify` runs:
 - OOXML integrity checks
 - comment-reference consistency checks
-- revision delta summary
+- revision delta summary (`insert`, `delete`, `move_to`, `move_from`, `total`)
 - render diff checks with per-page artifacts
 
 ## 6) Visual rendering

@@ -695,7 +695,7 @@ def _analyze_interop_drift(
         }
 
     try:
-        after_text = ooxml_engine.inspect(docx).text
+        after_text = ooxml_engine.inspect(docx, text_mode="review-visible").text_value
     except Exception as exc:  # pragma: no cover - defensive path
         return {
             "detected": False,
@@ -753,11 +753,11 @@ def _write_review_sidecars(config: AppConfig, docx_path: Path, review_data: dict
     sidecars = render_sidecar_paths(config, docx_path)
     comments = review_data.get("comments", [])
     revisions = review_data.get("revisions", [])
-    text_lines = [item.get("text", "") for item in revisions]
+    text_value = str(review_data.get("text_value", ""))
 
     write_json(sidecars["comments"], comments)
     write_json(sidecars["revisions"], revisions)
-    write_text(sidecars["text"], "\n".join(text_lines) + ("\n" if text_lines else ""))
+    write_text(sidecars["text"], text_value + ("\n" if text_value else ""))
     return {"comments": str(sidecars["comments"]), "revisions": str(sidecars["revisions"]), "text": str(sidecars["text"])}
 
 
@@ -858,21 +858,24 @@ def version() -> None:
 @app.command("inspect")
 def inspect_cmd(
     docx: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    text_mode: str = typer.Option("review-visible", "--text-mode", help="review-visible|raw"),
     config_path: Path | None = typer.Option(None, "--config", help="Path to wordmark config file."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
     write_sidecar: bool = typer.Option(True, "--write-sidecar/--no-write-sidecar", help="Write sidecar artifacts."),
 ) -> None:
     """Inspect paragraphs, comments, and revision state."""
     config = _load_app_config(config_path)
-    report = ooxml_engine.inspect(docx)
+    resolved_text_mode = _resolve_choice("text_mode", text_mode, {"review-visible", "raw"})
+    report = ooxml_engine.inspect(docx, text_mode=resolved_text_mode)
 
     payload: dict[str, Any] = {
+        "schema_version": 2,
         "report": _payload(report),
         "sidecars": {},
     }
 
     if write_sidecar:
-        review_data = ooxml_engine.list_review(docx)
+        review_data = ooxml_engine.list_review(docx, text_mode=resolved_text_mode)
         payload["sidecars"] = _write_review_sidecars(config, docx, review_data)
 
     _echo(payload, json_output=json_output)
@@ -1009,7 +1012,7 @@ def edit_apply(
     with _docx_operation_lock(docx):
         if drift_check:
             try:
-                before_text_snapshot = ooxml_engine.inspect(docx).text
+                before_text_snapshot = ooxml_engine.inspect(docx, text_mode="review-visible").text_value
             except Exception:  # pragma: no cover - defensive diagnostics path
                 before_text_snapshot = None
 
@@ -1188,19 +1191,22 @@ def edit_apply(
 @review_app.command("list")
 def review_list(
     docx: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    text_mode: str = typer.Option("review-visible", "--text-mode", help="review-visible|raw"),
     config_path: Path | None = typer.Option(None, "--config", help="Path to wordmark config file."),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
     write_sidecar: bool = typer.Option(True, "--write-sidecar/--no-write-sidecar", help="Write sidecar artifacts."),
 ) -> None:
     """List comments and revisions in review-friendly format."""
     config = _load_app_config(config_path)
-    review_data = ooxml_engine.list_review(docx)
+    resolved_text_mode = _resolve_choice("text_mode", text_mode, {"review-visible", "raw"})
+    review_data = ooxml_engine.list_review(docx, text_mode=resolved_text_mode)
     sidecars: dict[str, str] = {}
 
     if write_sidecar:
         sidecars = _write_review_sidecars(config, docx, review_data)
 
     payload = {
+        "schema_version": 2,
         "review": review_data,
         "sidecars": sidecars,
     }
@@ -1402,6 +1408,7 @@ def verify_cmd(
     )
 
     payload = {
+        "schema_version": 2,
         "verify": {
             "passed": result.passed,
             "profile": result.profile,
@@ -1412,7 +1419,13 @@ def verify_cmd(
 
     if write_sidecar and config.sidecar.enabled:
         sidecars = render_sidecar_paths(config, after)
-        write_json(sidecars["report"], payload["verify"])
+        write_json(
+            sidecars["report"],
+            {
+                "schema_version": 2,
+                "verify": payload["verify"],
+            },
+        )
         write_json(sidecars["xml_manifest"], result.checks["manifest"])
         write_json(sidecars["revisions"], result.checks["revisions"])
         write_json(sidecars["comments"], result.checks["comment_integrity"])

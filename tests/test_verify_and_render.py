@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import json
 import shutil
 from types import SimpleNamespace
 from pathlib import Path
 
 from PIL import Image
+from typer.testing import CliRunner
 
 from wordmark.config import load_config
+from wordmark.cli import app
 from wordmark.render import render_docx
 from wordmark import verify as verify_mod
 from wordmark.verify import verify_docx
@@ -98,3 +101,29 @@ def test_verify_review_edit_profile_reasoning(sample_docx: Path, tmp_path: Path)
     assert reasoning["profile"] == "review-edit"
     assert reasoning["render_diff_threshold"] == 0.12
     assert reasoning["max_page_growth"] == 2
+    revisions = result.checks["revisions"]
+    assert set(revisions["before"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
+    assert set(revisions["after"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
+    assert set(revisions["delta"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
+
+
+def test_cli_verify_emits_schema_v2(sample_docx: Path, tmp_path: Path) -> None:
+    before = tmp_path / "before.docx"
+    after = tmp_path / "after.docx"
+    shutil.copy2(sample_docx, before)
+    shutil.copy2(sample_docx, after)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["verify", str(before), str(after), "--json"])
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 2
+    assert payload["verify"]["passed"] is True
+    assert set(payload["verify"]["checks"]["revisions"]["delta"].keys()) == {
+        "insert",
+        "delete",
+        "move_to",
+        "move_from",
+        "total",
+    }

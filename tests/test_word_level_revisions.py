@@ -27,8 +27,8 @@ def test_replace_text_once_tracks_only_word_when_in_single_run(tmp_path: Path) -
     assert op["new_text"] == "practical"
 
     review = ooxml_engine.list_review(doc_path)
-    assert [r["text"] for r in review["revisions"] if r["type"] == "ins"] == ["ic"]
-    assert [r["text"] for r in review["revisions"] if r["type"] == "del"] == ["ori"]
+    assert [r["text"] for r in review["revisions"] if r["type"] == "insert"] == ["ic"]
+    assert [r["text"] for r in review["revisions"] if r["type"] == "delete"] == ["ori"]
 
 
 def test_replace_text_once_falls_back_when_match_spans_runs(tmp_path: Path) -> None:
@@ -55,8 +55,8 @@ def test_replace_text_once_falls_back_when_match_spans_runs(tmp_path: Path) -> N
     assert op["new_text"] == "practical"
 
     review = ooxml_engine.list_review(doc_path)
-    assert [r["text"] for r in review["revisions"] if r["type"] == "ins"] == ["ic"]
-    assert [r["text"] for r in review["revisions"] if r["type"] == "del"] == ["ori"]
+    assert [r["text"] for r in review["revisions"] if r["type"] == "insert"] == ["ic"]
+    assert [r["text"] for r in review["revisions"] if r["type"] == "delete"] == ["ori"]
 
 
 def test_replace_text_once_tracks_minimal_insertion(tmp_path: Path) -> None:
@@ -74,8 +74,8 @@ def test_replace_text_once_tracks_minimal_insertion(tmp_path: Path) -> None:
     )
 
     review = ooxml_engine.list_review(doc_path)
-    inserted = [r["text"] for r in review["revisions"] if r["type"] == "ins"]
-    deleted = [r["text"] for r in review["revisions"] if r["type"] == "del"]
+    inserted = [r["text"] for r in review["revisions"] if r["type"] == "insert"]
+    deleted = [r["text"] for r in review["revisions"] if r["type"] == "delete"]
     assert inserted == ["of "]
     assert deleted == []
 
@@ -95,8 +95,8 @@ def test_replace_text_once_tracks_hyphen_delta(tmp_path: Path) -> None:
     )
 
     review = ooxml_engine.list_review(doc_path)
-    inserted = [r["text"] for r in review["revisions"] if r["type"] == "ins"]
-    deleted = [r["text"] for r in review["revisions"] if r["type"] == "del"]
+    inserted = [r["text"] for r in review["revisions"] if r["type"] == "insert"]
+    deleted = [r["text"] for r in review["revisions"] if r["type"] == "delete"]
     assert inserted == ["-"]
     assert deleted == [" "]
 
@@ -126,7 +126,7 @@ def test_replace_paragraph_text_append_tracks_insert_only(tmp_path: Path) -> Non
     )
 
     review = ooxml_engine.list_review(doc_path)
-    inserted = [r["text"] for r in review["revisions"] if r["type"] == "ins"]
-    deleted = [r["text"] for r in review["revisions"] if r["type"] == "del"]
+    inserted = [r["text"] for r in review["revisions"] if r["type"] == "insert"]
+    deleted = [r["text"] for r in review["revisions"] if r["type"] == "delete"]
     assert inserted == [" Please confirm before submission."]
     assert deleted == []

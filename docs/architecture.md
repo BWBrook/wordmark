@@ -1,4 +1,4 @@
-# Wordmark Architecture (Phase 5)
+# Wordmark Architecture (Phase 6)
 
 ## Objective
 Provide a Linux-first, CLI-first workflow for editing `.docx` review state (comments + tracked changes) with controlled formatting risk and Git-friendly artifacts.
@@ -13,7 +13,15 @@ Wordmark uses a dual-engine mutation strategy:
   - comment insertion
   - paragraph-level tracked text replacement
   - targeted single replace
-  - revision accept/reject by author/all
+  - revision accept/reject by author/all (including move revisions)
+- Inspection supports explicit text extraction modes:
+  - `review-visible` (default): excludes deleted and moved-from text
+  - `raw`: includes all tracked text fragments
+- Revision taxonomy in outputs is normalized to:
+  - `insert`
+  - `delete`
+  - `move_to`
+  - `move_from`
 - Supports anchor resolution model:
   - selector compatibility (`p:<index>`, `text:<snippet>`)
   - paragraph+context anchor object (`paragraph_index`, `expected_text`, `context_before`, `context_after`, `occurrence`)
@@ -34,7 +42,7 @@ Wordmark uses a dual-engine mutation strategy:
   - `status`
   - `replaced_count`
   - `strategy_used`
-- Emits author-binding diagnostics and runs post-write normalization for newly introduced `Unknown Author` revisions.
+- Emits author-binding diagnostics and runs post-write normalization for newly introduced `Unknown Author` revisions across `w:ins`, `w:del`, `w:moveTo`, and `w:moveFrom`.
 - Records fallback reason and optional low-hit retry metadata in operation details.
 
 3. Interop drift diagnostics (`src/wordmark/interop_drift.py`)
@@ -62,11 +70,12 @@ Edit strategy controls:
 - interop drift checks with warning threshold controls
 - concise operation risk summary emission for downstream consumers
 - merge-back helper output (`review prepare-merge`) for Word desktop handoff
+- v2 CLI JSON schema marker (`schema_version: 2`) for `inspect`, `review list`, and `verify`
 
 ## Data and artifacts
 - Canonical source: `.docx` files.
 - Sidecars (default under `artifacts/`):
-  - `{stem}.text.md`
+  - `{stem}.text.md` (document text snapshot for chosen `text_mode`, default `review-visible`)
   - `{stem}.comments.json`
   - `{stem}.revisions.json`
   - `{stem}.xml-manifest.json`
@@ -91,3 +100,4 @@ Edit strategy controls:
 - CLI intentionally does not write directly to cloud-hosted shared documents.
 - UNO matching still relies on LibreOffice literal search behavior; phrase-level, context-aware patches remain preferred over long full-paragraph literals.
 - `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
+- `raw` text mode is intentionally lossy for reviewer readability in tracked documents; use it for diagnostics, not human handoff summaries.

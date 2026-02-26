@@ -66,7 +66,7 @@ def test_replace_text_once_anchor_context_disambiguates(tmp_path: Path) -> None:
     assert op["paragraph_index"] == 3
 
     report = ooxml_engine.inspect(doc_path)
-    lines = report.text.splitlines()
+    lines = report.text_value.splitlines()
     assert "Draft appears in the first target paragraph." in lines
     assert "Final appears in the second target paragraph." in lines
 

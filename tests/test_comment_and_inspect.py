@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -47,4 +48,33 @@ def test_cli_inspect_writes_sidecars(sample_docx: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(app, ["inspect", str(sample_docx), "--config", str(cfg_path), "--json"])
     assert result.exit_code == 0
-    assert "sidecars" in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 2
+    assert payload["report"]["text_mode"] == "review-visible"
+    assert "text_value" in payload["report"]
+    assert "sidecars" in payload
+
+    sidecar_path = sample_docx.parent / f"{sample_docx.stem}.text.md"
+    assert sidecar_path.exists()
+    assert sidecar_path.read_text(encoding="utf-8").strip() == payload["report"]["text_value"].strip()
+
+
+def test_cli_inspect_supports_raw_text_mode(sample_docx: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["inspect", str(sample_docx), "--text-mode", "raw", "--json"])
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 2
+    assert payload["report"]["text_mode"] == "raw"
+
+
+def test_cli_review_list_schema_v2(sample_docx: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["review", "list", str(sample_docx), "--json"])
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == 2
+    assert payload["review"]["text_mode"] == "review-visible"
+    assert "text_value" in payload["review"]

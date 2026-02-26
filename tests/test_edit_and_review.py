@@ -35,8 +35,8 @@ def test_tracked_edit_defaults_to_barry_brook(sample_docx: Path) -> None:
     assert result.exit_code == 0
 
     review = ooxml_engine.list_review(sample_docx)
-    assert any(r["type"] == "ins" and r["author"] == "Barry Brook" for r in review["revisions"])
-    assert any(r["type"] == "del" and r["author"] == "Barry Brook" for r in review["revisions"])
+    assert any(r["type"] == "insert" and r["author"] == "Barry Brook" for r in review["revisions"])
+    assert any(r["type"] == "delete" and r["author"] == "Barry Brook" for r in review["revisions"])
 
 
 def test_override_author_for_tracked_edit(sample_docx: Path) -> None:
