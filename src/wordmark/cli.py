@@ -5,9 +5,11 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 import fcntl
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 import typer
@@ -417,6 +419,107 @@ def _build_minimal_uno_replace_once(
     }
 
 
+def _token_change_islands(old_text: str, new_text: str) -> list[tuple[int, int, str]]:
+    old_tokens = [(m.group(0), m.start(), m.end()) for m in re.finditer(r"\s+|\w+|[^\w\s]", old_text)]
+    new_tokens = [(m.group(0), m.start(), m.end()) for m in re.finditer(r"\s+|\w+|[^\w\s]", new_text)]
+
+    matcher = SequenceMatcher(
+        a=[token for token, _, _ in old_tokens],
+        b=[token for token, _, _ in new_tokens],
+        autojunk=False,
+    )
+    islands: list[tuple[int, int, str]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+
+        old_start = old_tokens[i1][1] if i1 < len(old_tokens) else len(old_text)
+        old_end = old_tokens[i2 - 1][2] if i2 > i1 else old_start
+        new_start = new_tokens[j1][1] if j1 < len(new_tokens) else len(new_text)
+        new_end = new_tokens[j2 - 1][2] if j2 > j1 else new_start
+        islands.append((old_start, old_end, new_text[new_start:new_end]))
+    return islands
+
+
+def _build_split_uno_replace_sequence(
+    *,
+    op: dict[str, Any],
+    op_index: int,
+) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
+    find_text = op.get("find")
+    replace_text = op.get("replace")
+
+    if not isinstance(find_text, str) or not isinstance(replace_text, str):
+        return None, None
+
+    try:
+        occurrence = int(op.get("occurrence", 1))
+    except (TypeError, ValueError):
+        occurrence = 1
+
+    # Guardrail: split-sequence rewrite is currently only safe/deterministic
+    # for the default single targeted occurrence path.
+    if occurrence != 1 or find_text == replace_text:
+        return None, None
+
+    islands = _token_change_islands(find_text, replace_text)
+    if len(islands) < 2 or len(islands) > 3:
+        return None, None
+
+    sequence_ops: list[dict[str, Any]] = []
+    steps: list[dict[str, Any]] = []
+    current_find = find_text
+    offset = 0
+
+    for idx, (i1, i2, replacement) in enumerate(islands):
+        if idx > 0:
+            prior_end = islands[idx - 1][1]
+            if i1 - prior_end < 2:
+                return None, None
+
+        span_start = i1 + offset
+        span_end = i2 + offset
+        if span_start < 0 or span_end < span_start or span_end > len(current_find):
+            return None, None
+
+        next_find = current_find[:span_start] + replacement + current_find[span_end:]
+        step_op = {
+            "type": "replace_text_once",
+            "find": current_find,
+            "replace": next_find,
+            "occurrence": 1,
+        }
+        rewritten_step, step_info = _build_minimal_uno_replace_once(op=step_op, op_index=op_index)
+        if step_info.get("status") != "rewritten":
+            return None, None
+
+        sequence_ops.append(rewritten_step)
+        steps.append(
+            {
+                "span_start": int(step_info.get("span_start", 0)),
+                "span_length": int(step_info.get("span_length", 0)),
+                "span_replacement": str(step_info.get("span_replacement", "")),
+            }
+        )
+        current_find = next_find
+        offset += len(replacement) - (i2 - i1)
+
+    if len(sequence_ops) < 2:
+        return None, None
+
+    return sequence_ops, {
+        "index": op_index,
+        "type": str(op.get("type")),
+        "status": "rewritten_split",
+        "strategy": "split_span_sequence",
+        "original_find": find_text,
+        "original_replace": replace_text,
+        "original_occurrence": occurrence,
+        "split_operations": len(sequence_ops),
+        "steps": steps,
+    }
+
+
 def _prepare_uno_precision_patch(docx: Path, patch_data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
     operations = patch_data.get("operations")
     if not isinstance(operations, list) or not operations:
@@ -449,6 +552,13 @@ def _prepare_uno_precision_patch(docx: Path, patch_data: dict[str, Any]) -> tupl
         }
 
         if op_type == "replace_text_once":
+            split_ops, split_info = _build_split_uno_replace_sequence(op=op, op_index=index)
+            if split_ops is not None and split_info is not None:
+                rewritten_ops.extend(split_ops)
+                op_results.append(split_info)
+                rewritten_count += 1
+                continue
+
             prepared_op, info = _build_minimal_uno_replace_once(op=op, op_index=index)
             if info.get("status") == "rewritten":
                 rewritten_count += 1

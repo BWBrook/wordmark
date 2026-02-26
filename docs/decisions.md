@@ -110,3 +110,13 @@
 - Context: Advanced review passes can succeed technically while still introducing subtle cross-reference drift risk (for example Figure/Table/Eq/Appx renumbering shifts), and operators need a fast machine-readable signal for when manual Word desktop validation should be prioritised.
 - Decision: Add a deterministic text-snapshot drift analyzer (`interop_drift`) for reference families (Figure/Table/Equation/Appendix), enable it by default in `edit apply` with explicit threshold control (`--drift-warning-threshold low|moderate|high`), and emit a compact `operation.details.risk_summary` block (fallback usage, risky preflight count, rewrite count, drift status/severity).
 - Consequences: Handoffs become more auditable and triage-friendly without changing mutation semantics; drift warnings remain advisory and trigger validation workflow, not automatic mutation strategy changes.
+
+## 2026-02-26 - ADR-019: Token-island split rewrite for separated UNO fallback edits
+- Status: accepted
+- Context: Even with minimal span rewrite, some `replace_text_once` operations in UNO fallback still surfaced as broad clause replacements when the intended change set contained two separated micro-edits (for example dropping an article near the start and inserting one word near the end).
+- Decision: Add a conservative token-level split rewrite path before the existing minimal-span rewrite:
+  1. Tokenize `find`/`replace` into whitespace, word, and punctuation tokens.
+  2. Identify non-equal token islands via `SequenceMatcher`.
+  3. For operations with 2-3 separated islands (`occurrence=1`), emit a sequence of deterministic `replace_span_once` steps, each anchored to the evolving intermediate phrase.
+  4. Fall back to the existing single-span rewrite for all other shapes.
+- Consequences: Multi-point edits now preserve unchanged middle text in tracked changes more often; aggressive splitting is avoided for dense transformations (for example many case/hyphen/token shifts), preserving prior stable behavior.

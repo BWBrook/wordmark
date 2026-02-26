@@ -19,6 +19,22 @@ def _write_patch(path: Path, payload: dict) -> Path:
     return patch_path
 
 
+def _apply_replace_span_once(text: str, op: dict[str, object]) -> str:
+    assert op["type"] == "replace_span_once"
+    start = int(op["span_start"])
+    length = int(op["span_length"])
+    replacement = str(op["replacement"])
+    return text[:start] + replacement + text[start + length :]
+
+
+def _apply_rewrite_sequence(initial_text: str, ops: list[dict[str, object]]) -> str:
+    current = initial_text
+    for op in ops:
+        assert op["find"] == current
+        current = _apply_replace_span_once(current, op)
+    return current
+
+
 def test_preflight_only_does_not_mutate(sample_docx: Path) -> None:
     runner = CliRunner()
     patch = {
@@ -411,6 +427,58 @@ def test_prepare_uno_precision_patch_avoids_partial_word_boundary(tmp_path: Path
     assert op["type"] == "replace_span_once"
     assert "regression" in op["replacement"]
     assert not op["replacement"].endswith(" r")
+
+
+def test_prepare_uno_precision_patch_splits_disjoint_word_changes(sample_docx: Path) -> None:
+    find_text = "away from opportunistic understory"
+    replace_text = "beyond opportunistic understorey"
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": find_text,
+                "replace": replace_text,
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+    result = info["operation_results"][0]
+    assert result["status"] == "rewritten_split"
+    assert result["split_operations"] == 2
+
+    ops = prepared["operations"]
+    assert len(ops) == 2
+    assert all(op["type"] == "replace_span_once" for op in ops)
+    assert _apply_rewrite_sequence(find_text, ops) == replace_text
+
+
+def test_prepare_uno_precision_patch_splits_article_drop_and_late_insert(sample_docx: Path) -> None:
+    find_text = "the canopy, wetland, and open-habitat communities"
+    replace_text = "canopy, wetland, and open-habitat bird communities"
+    patch = {
+        "operations": [
+            {
+                "type": "replace_text_once",
+                "find": find_text,
+                "replace": replace_text,
+            }
+        ]
+    }
+
+    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    assert info is not None
+    assert info["rewritten_operations"] == 1
+    result = info["operation_results"][0]
+    assert result["status"] == "rewritten_split"
+    assert result["split_operations"] == 2
+
+    ops = prepared["operations"]
+    assert len(ops) == 2
+    assert _apply_rewrite_sequence(find_text, ops) == replace_text
+    assert any("bird" in str(op["replacement"]) for op in ops)
 
 
 def test_edit_apply_emits_interop_drift_and_risk_summary(sample_docx: Path, monkeypatch: pytest.MonkeyPatch) -> None:
