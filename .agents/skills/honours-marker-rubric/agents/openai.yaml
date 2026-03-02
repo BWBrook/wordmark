@@ -1,0 +1,6 @@
+interface:
+  display_name: "Honours Marker (Rubric-based)"
+  short_description: "Criterion-by-criterion marking + actionable feedback (optionally annotated .docx)."
+  default_prompt: "Mark the submission using the provided rubric. Give a transparent criterion breakdown with evidence from the text, and add anchored comments to the .docx for the most important feedback."
+policy:
+  allow_implicit_invocation: true

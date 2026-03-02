@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grant Proposal Reviewer"
+  short_description: "Criterion-driven grant critique with scorecard, risks, and rewrites."
+  default_prompt: "Review the grant proposal against the provided scheme criteria. Produce a scorecard, prioritised weaknesses with fixes, and concrete rewrite suggestions. If working from .docx, add anchored comments and minimal tracked edits."
+policy:
+  allow_implicit_invocation: true

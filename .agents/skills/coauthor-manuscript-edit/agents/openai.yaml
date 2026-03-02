@@ -1,0 +1,6 @@
+interface:
+  display_name: "Co-author Manuscript Edit"
+  short_description: "Collaborative edits + comments to improve a paper draft for submission."
+  default_prompt: "Act as a co-author. Make tracked edits for clear improvements and add anchored comments for issues requiring author judgement. Summarise the biggest risks and open decisions."
+policy:
+  allow_implicit_invocation: true

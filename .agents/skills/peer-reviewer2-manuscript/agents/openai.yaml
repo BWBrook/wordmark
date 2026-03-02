@@ -1,0 +1,6 @@
+interface:
+  display_name: "Peer Review (Reviewer-2 Mode)"
+  short_description: "Severity-tagged peer review with traceable, actionable fixes."
+  default_prompt: "Act as an anonymous journal reviewer. Identify major/moderate/minor issues with traceable references and concrete remedies. Add anchored comments to the .docx when appropriate."
+policy:
+  allow_implicit_invocation: true

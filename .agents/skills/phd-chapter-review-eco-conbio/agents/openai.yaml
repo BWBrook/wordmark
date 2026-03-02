@@ -1,0 +1,6 @@
+interface:
+  display_name: "PhD Chapter Review (Eco/ConBio)"
+  short_description: "Supervisor-style critique + tracked edits for PhD thesis chapters."
+  default_prompt: "Review the provided PhD chapter draft as a senior professor in ecology/conservation. Make tracked edits for clear fixes, add anchored comments for deeper issues, and summarise the top revision priorities."
+policy:
+  allow_implicit_invocation: true
