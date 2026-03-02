@@ -18,6 +18,9 @@ from wordmark import __version__
 from wordmark.config import AppConfig, load_config
 from wordmark import interop_drift
 from wordmark.jsonio import dumps
+from wordmark import manuscript_ingest
+from wordmark import manuscript_rounds
+from wordmark import manuscript_synthesis
 from wordmark.models import OperationResult
 from wordmark import ooxml_engine
 from wordmark import uno_engine
@@ -26,16 +29,18 @@ from wordmark.render import render_docx
 from wordmark.sidecar import render_sidecar_paths, write_json, write_text
 from wordmark.transcript import append_transcript
 
-app = typer.Typer(help="CLI-first DOCX review tooling", no_args_is_help=True)
+app = typer.Typer(help="CLI-first DOCX and manuscript review tooling", no_args_is_help=True)
 comment_app = typer.Typer(help="Comment operations")
 edit_app = typer.Typer(help="Document edit operations")
 review_app = typer.Typer(help="Review operations")
 artifacts_app = typer.Typer(help="Artifact housekeeping")
+manuscript_app = typer.Typer(help="Markdown/Quarto manuscript collaboration workflows")
 
 app.add_typer(comment_app, name="comment")
 app.add_typer(edit_app, name="edit")
 app.add_typer(review_app, name="review")
 app.add_typer(artifacts_app, name="artifacts")
+app.add_typer(manuscript_app, name="manuscript")
 
 
 def _payload(value: Any) -> Any:
@@ -1383,6 +1388,106 @@ def artifacts_clean(
 
     if errors:
         raise typer.Exit(code=1)
+
+
+@manuscript_app.command("prepare")
+def manuscript_prepare(
+    source: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    build_cmd: str | None = typer.Option(
+        None,
+        "--build-cmd",
+        help="Optional builder template. Placeholders: {input}, {outdir}, {docx_out}, {pdf_out}.",
+    ),
+    formats: str = typer.Option("docx,pdf", "--formats", help="Comma-separated formats: docx,pdf"),
+    out: Path = typer.Option(
+        Path("artifacts/manuscript_rounds"),
+        "--out",
+        help="Root directory for manuscript review rounds.",
+    ),
+    round_id: str | None = typer.Option(None, "--round-id", help="Optional stable round identifier."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Create a review round bundle from a Markdown/Quarto source."""
+    payload = manuscript_rounds.prepare_round(
+        source,
+        build_cmd=build_cmd,
+        formats=formats,
+        out_root=out,
+        round_id=round_id,
+    )
+    _echo(payload, json_output=json_output)
+
+
+@manuscript_app.command("collect")
+def manuscript_collect(
+    round_dir: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    from_pr: str | None = typer.Option(
+        None,
+        "--from-pr",
+        help="PR number or URL to ingest GitHub review comments/suggestions via gh.",
+    ),
+    notes: Path | None = typer.Option(
+        None,
+        "--notes",
+        exists=True,
+        readable=True,
+        resolve_path=True,
+        help="Local markdown notes file to ingest.",
+    ),
+    docx_reviewed: Path | None = typer.Option(
+        None,
+        "--docx-reviewed",
+        exists=True,
+        readable=True,
+        resolve_path=True,
+        help="Reviewed DOCX copy to ingest comment/revision feedback from.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Collect multi-channel feedback into a normalized bundle."""
+    payload = manuscript_ingest.collect_feedback(
+        round_dir,
+        from_pr=from_pr,
+        notes_path=notes,
+        reviewed_docx=docx_reviewed,
+    )
+    _echo(payload, json_output=json_output)
+
+
+@manuscript_app.command("synthesize")
+def manuscript_synthesize(
+    round_dir: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    source: Path = typer.Option(..., "--source", exists=True, readable=True, resolve_path=True, help="Source .md/.qmd file."),
+    apply_safe: bool = typer.Option(
+        False,
+        "--apply-safe",
+        help="Apply deterministic safe edits directly to source.",
+    ),
+    export_critic: bool = typer.Option(
+        False,
+        "--export-critic",
+        help="Export optional CriticMarkup review copy.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Create patch proposals and reports from collected feedback."""
+    payload = manuscript_synthesis.synthesize_feedback(
+        round_dir,
+        source=source,
+        apply_safe=apply_safe,
+        export_critic=export_critic,
+    )
+    _echo(payload, json_output=json_output)
+
+
+@manuscript_app.command("status")
+def manuscript_status(
+    round_dir: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Report round completion status and unresolved items."""
+    payload = manuscript_rounds.manuscript_status(round_dir)
+    _echo(payload, json_output=json_output)
 
 
 @app.command("verify")

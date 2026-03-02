@@ -1,6 +1,6 @@
 # wordmark
 
-Wordmark is a Linux-first, CLI-first toolkit for working with `.docx` review workflows outside Microsoft Word.
+Wordmark is a Linux-first, CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts.
 
 ## Goals
 - Open and inspect `.docx` review state (comments and revisions)
@@ -8,6 +8,7 @@ Wordmark is a Linux-first, CLI-first toolkit for working with `.docx` review wor
 - Accept/reject revisions by author or globally
 - Verify fidelity with XML and render-based checks
 - Emit machine-readable sidecar artifacts for Git review
+- Bridge Markdown/Quarto collaboration rounds with optional DOCX review handoffs
 
 ## Quickstart
 
@@ -32,7 +33,44 @@ uv run wordmark verify before.docx after.docx --profile review-edit --json
 uv run wordmark render <file.docx> --out tmp/docs/render_out --json
 uv run wordmark artifacts clean --json
 uv run wordmark artifacts clean --older-than-days 7 --apply --json
+uv run wordmark manuscript prepare manuscript.qmd --formats docx,pdf --json
+uv run wordmark manuscript collect artifacts/manuscript_rounds/<round_id> --notes feedback.md --json
+uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> --source manuscript.qmd --json
+uv run wordmark manuscript status artifacts/manuscript_rounds/<round_id> --json
 ```
+
+## Markdown/Quarto collaboration rounds
+Wordmark uses a hybrid model for manuscript collaboration:
+- canonical source stays in `.md`/`.qmd`
+- reviewers can contribute via PR comments/suggestions, notes markdown, and optional DOCX review files
+- feedback is normalized into structured sidecars and synthesized into safe patch proposals
+
+Core commands:
+```bash
+# 1) Prepare a review round bundle
+uv run wordmark manuscript prepare chapter.qmd --formats docx,pdf --json
+
+# 2) Collect feedback channels into one bundle
+uv run wordmark manuscript collect artifacts/manuscript_rounds/<round_id> \
+  --from-pr 123 \
+  --notes /path/to/feedback.md \
+  --docx-reviewed /path/to/chapter_reviewed.docx \
+  --json
+
+# 3) Synthesize safe edits + reports (non-mutating by default)
+uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --export-critic \
+  --json
+
+# 4) Apply only deterministic safe edits when ready
+uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --apply-safe \
+  --json
+```
+
+See `docs/markdown-quarto-collab-workflow.md` for the full operator workflow.
 
 ## Canonical and edited fixtures
 - Canonical immutable examples live under `examples/canonical/`.

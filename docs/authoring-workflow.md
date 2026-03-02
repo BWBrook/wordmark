@@ -203,3 +203,46 @@ Delete stale sidecars while retaining transcript history:
 ```bash
 uv run wordmark artifacts clean --older-than-days 14 --keep-transcripts --apply --json
 ```
+
+## 7) Manuscript (Markdown/Quarto) collaboration rounds
+Use this flow when canonical writing is in `.md`/`.qmd`, but reviewers may work via PR comments, markdown notes, or DOCX review files.
+
+Prepare a round:
+```bash
+uv run wordmark manuscript prepare chapter.qmd --formats docx,pdf --json
+```
+
+Collect feedback into one bundle:
+```bash
+uv run wordmark manuscript collect artifacts/manuscript_rounds/<round_id> \
+  --from-pr 123 \
+  --notes /path/to/feedback.md \
+  --docx-reviewed /path/to/chapter_reviewed.docx \
+  --json
+```
+
+Synthesize patch proposals (non-mutating):
+```bash
+uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --export-critic \
+  --json
+```
+
+Apply deterministic safe edits only when explicitly approved:
+```bash
+uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --apply-safe \
+  --json
+```
+
+Check round status:
+```bash
+uv run wordmark manuscript status artifacts/manuscript_rounds/<round_id> --json
+```
+
+Key defaults:
+- `.md/.qmd` remains canonical source.
+- feedback is preserved in sidecar artifacts (`feedback.bundle.json`, timeline/report files).
+- DOCX is an optional review bridge artifact, not a source-of-truth replacement.

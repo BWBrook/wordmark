@@ -139,3 +139,14 @@
 - Context: Word can show “unreadable content” recovery prompts even when comments/revisions are present if `word/document.xml` contains compatibility attributes (for example `mc:Ignorable`) that reference undeclared prefixes.
 - Decision: Add a verify gate (`compatibility_namespace_integrity`) that parses `word/document.xml`, inspects `mc:Ignorable` tokens, and fails verification when any referenced prefix is missing from namespace declarations.
 - Consequences: Corrupt-but-partially-readable outputs are caught before handoff; operators get explicit diagnostics (`missing_prefixes`) and a deterministic fail condition in both strict and review-edit profiles.
+
+## 2026-03-02 - ADR-022: Hybrid manuscript collaboration rounds keep `.md/.qmd` canonical
+- Status: accepted
+- Context: Teams author manuscripts in Markdown/Quarto but still need high-quality collaborative review workflows, including optional Word-style review ergonomics, without sacrificing source-of-truth discipline.
+- Decision: Add a `manuscript` command suite (`prepare`, `collect`, `synthesize`, `status`) that:
+  1. keeps `.md/.qmd` as canonical source,
+  2. supports optional DOCX/PDF review artifacts for collaborator comfort,
+  3. ingests feedback from PR comments/suggestions, markdown notes, and reviewed DOCX states into structured sidecars,
+  4. synthesizes deterministic safe edit proposals with explicit opt-in apply (`--apply-safe`),
+  5. treats DOCX backport automation as out-of-scope for this phase.
+- Consequences: Wordmark now supports mixed collaboration styles with auditable artifacts and low-risk source mutation semantics, while avoiding brittle auto-translation of arbitrary DOCX tracked revisions into Markdown.

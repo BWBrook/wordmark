@@ -1,7 +1,9 @@
-# Wordmark Architecture (Phase 6)
+# Wordmark Architecture (Phase 7)
 
 ## Objective
-Provide a Linux-first, CLI-first workflow for editing `.docx` review state (comments + tracked changes) with controlled formatting risk and Git-friendly artifacts.
+Provide a Linux-first, CLI-first workflow for:
+- editing `.docx` review state (comments + tracked changes) with controlled formatting risk, and
+- running hybrid Markdown/Quarto collaboration rounds that keep `.md/.qmd` as canonical source while aggregating review feedback into auditable artifacts.
 
 ## High-level design
 Wordmark uses a dual-engine mutation strategy:
@@ -54,6 +56,10 @@ Wordmark uses a dual-engine mutation strategy:
 - `src/wordmark/cli.py`: command surface and engine orchestration.
 - `src/wordmark/docx_package.py`: byte-preserving OOXML ZIP access.
 - `src/wordmark/interop_drift.py`: cross-reference drift detection and severity scoring.
+- `src/wordmark/manuscript_models.py`: schema models for round manifests, feedback events, and safe edit proposals.
+- `src/wordmark/manuscript_rounds.py`: round preparation/build orchestration and status reporting.
+- `src/wordmark/manuscript_ingest.py`: feedback ingestion from notes, GitHub PR, and reviewed DOCX artifacts.
+- `src/wordmark/manuscript_synthesis.py`: patch proposal synthesis, optional safe apply, and CriticMarkup export.
 - `src/wordmark/ooxml_engine.py`: inspect/comment/edit/review operations.
 - `src/wordmark/uno_engine.py`: UNO bridge, diagnostics, and author post-processing.
 - `src/wordmark/render.py`: DOCX -> PDF -> PNG rendering.
@@ -71,9 +77,11 @@ Edit strategy controls:
 - concise operation risk summary emission for downstream consumers
 - merge-back helper output (`review prepare-merge`) for Word desktop handoff
 - v2 CLI JSON schema marker (`schema_version: 2`) for `inspect`, `review list`, and `verify`
+- manuscript round command surface (`manuscript prepare|collect|synthesize|status`) with schema v1 sidecars
 
 ## Data and artifacts
-- Canonical source: `.docx` files.
+- Canonical source for DOCX operations: `.docx` files.
+- Canonical source for manuscript rounds: `.md`/`.qmd` files.
 - Sidecars (default under `artifacts/`):
   - `{stem}.text.md` (document text snapshot for chosen `text_mode`, default `review-visible`)
   - `{stem}.comments.json`
@@ -82,6 +90,18 @@ Edit strategy controls:
   - `{stem}.report.json`
   - `{stem}.render/` with before/after/diff PNG pages from `verify`.
 - Transcript: `artifacts/transcripts/operations.jsonl`.
+
+Manuscript round artifacts (default under `artifacts/manuscript_rounds/<round_id>/`):
+- `manifest.json` (source/build provenance and hashes)
+- `prepare.report.json`
+- `feedback.bundle.json` (normalized multi-channel events)
+- `feedback.timeline.md`
+- `proposed.patch`
+- `proposed.safe_edits.json`
+- `open_issues.md`
+- `review_summary.md`
+- `synthesize.report.json`
+- optional `source_review.critic.md`
 
 ## Configuration
 `wordmark.yaml` controls:
@@ -101,6 +121,7 @@ Edit strategy controls:
 - UNO matching still relies on LibreOffice literal search behavior; phrase-level, context-aware patches remain preferred over long full-paragraph literals.
 - `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
 - `raw` text mode is intentionally lossy for reviewer readability in tracked documents; use it for diagnostics, not human handoff summaries.
+- Automatic DOCX tracked-change backport to `.md/.qmd` is intentionally out-of-scope in phase 7; only deterministic text-safe proposals can be auto-applied.
 
 Verify gate notes:
 - verification now includes OOXML compatibility namespace integrity checks (for example `mc:Ignorable` token declarations) to catch Word recovery-risk files before handoff.
