@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from docx import Document
+import pytest
 
 from wordmark import ooxml_engine
 
@@ -130,3 +131,66 @@ def test_replace_paragraph_text_append_tracks_insert_only(tmp_path: Path) -> Non
     deleted = [r["text"] for r in review["revisions"] if r["type"] == "delete"]
     assert inserted == [" Please confirm before submission."]
     assert deleted == []
+
+
+def test_replace_paragraph_text_strict_mode_rejects_full_rewrite_when_needed(tmp_path: Path) -> None:
+    doc_path = tmp_path / "strict-paragraph-rewrite.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run("Alpha sentence. ")
+    second = paragraph.add_run("Beta sentence.")
+    second.bold = True
+    doc.save(doc_path)
+
+    with pytest.raises(ooxml_engine.OoxmlUnsupportedOperation, match="Tracked paragraph rewrite disallowed"):
+        ooxml_engine.apply_patch(
+            doc_path,
+            patch_data={
+                "operations": [
+                    {
+                        "type": "replace_paragraph_text",
+                        "paragraph_index": 0,
+                        "expected_text": "Alpha sentence. Beta sentence.",
+                        "new_text": "Completely replaced paragraph content.",
+                    }
+                ]
+            },
+            author="Barry Brook",
+            track_changes=True,
+            dry_run=False,
+            allow_paragraph_rewrite_tracked=False,
+        )
+
+
+def test_replace_paragraph_text_aggressive_mode_allows_rewrite_and_preserves_new_text(tmp_path: Path) -> None:
+    doc_path = tmp_path / "aggressive-paragraph-rewrite.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run("Alpha sentence. ")
+    second = paragraph.add_run("Beta sentence.")
+    second.bold = True
+    doc.save(doc_path)
+
+    result = ooxml_engine.apply_patch(
+        doc_path,
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_paragraph_text",
+                    "paragraph_index": 0,
+                    "expected_text": "Alpha sentence. Beta sentence.",
+                    "new_text": "Completely replaced paragraph content.",
+                }
+            ]
+        },
+        author="Barry Brook",
+        track_changes=True,
+        dry_run=False,
+        allow_paragraph_rewrite_tracked=True,
+    )
+
+    op = result.details["operations"][0]
+    assert op["strategy"] == "paragraph_rewrite"
+
+    report = ooxml_engine.inspect(doc_path, text_mode="review-visible")
+    assert report.text_value == "Completely replaced paragraph content."

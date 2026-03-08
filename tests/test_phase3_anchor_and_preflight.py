@@ -99,6 +99,101 @@ def test_preflight_reports_anchor_ambiguity(tmp_path: Path) -> None:
     assert op["recommended_engine"] == "comment_fallback"
 
 
+def test_preflight_reports_anchor_not_found(tmp_path: Path) -> None:
+    doc_path = tmp_path / "anchor_not_found.docx"
+    doc = Document()
+    doc.add_paragraph("Paragraph one.")
+    doc.add_paragraph("Paragraph two.")
+    doc.save(doc_path)
+
+    report = ooxml_engine.preflight_patch(
+        doc_path,
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "Missing",
+                    "replace": "Present",
+                    "anchor": {"expected_text": "Missing"},
+                }
+            ]
+        },
+        track_changes=True,
+        allow_paragraph_rewrite_tracked=False,
+    )
+    op = report["operations"][0]
+    assert op["classification"] == "unsupported_high_risk"
+    assert op["reason_code"] == "anchor_not_found"
+
+
+def test_preflight_reports_anchor_context_mismatch(tmp_path: Path) -> None:
+    doc_path = tmp_path / "anchor_context_mismatch.docx"
+    doc = Document()
+    doc.add_paragraph("Heading")
+    doc.add_paragraph("Draft token appears in this paragraph.")
+    doc.add_paragraph("Trailing note")
+    doc.save(doc_path)
+
+    report = ooxml_engine.preflight_patch(
+        doc_path,
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "Draft",
+                    "replace": "Final",
+                    "anchor": {
+                        "expected_text": "Draft token",
+                        "context_before": "Wrong heading",
+                    },
+                }
+            ]
+        },
+        track_changes=True,
+        allow_paragraph_rewrite_tracked=False,
+    )
+    op = report["operations"][0]
+    assert op["classification"] == "unsupported_high_risk"
+    assert op["reason_code"] == "anchor_context_mismatch"
+
+
+def test_replace_text_once_anchor_occurrence_selects_second_match(tmp_path: Path) -> None:
+    doc_path = tmp_path / "anchor_occurrence.docx"
+    doc = Document()
+    doc.add_paragraph("Shared target sentence.")
+    doc.add_paragraph("Spacer")
+    doc.add_paragraph("Shared target sentence.")
+    doc.save(doc_path)
+
+    result = ooxml_engine.apply_patch(
+        doc_path,
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "Shared",
+                    "replace": "Updated",
+                    "anchor": {
+                        "expected_text": "Shared target sentence.",
+                        "occurrence": 2,
+                    },
+                }
+            ]
+        },
+        author="Barry Brook",
+        track_changes=False,
+        dry_run=False,
+    )
+
+    op = result.details["operations"][0]
+    assert op["paragraph_index"] == 2
+
+    report = ooxml_engine.inspect(doc_path)
+    lines = report.text_value.splitlines()
+    assert "Shared target sentence." in lines
+    assert "Updated target sentence." in lines
+
+
 def test_cli_comment_add_supports_anchor_json(tmp_path: Path) -> None:
     doc_path = tmp_path / "comment_anchor_json.docx"
     doc = Document()

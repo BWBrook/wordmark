@@ -7,6 +7,7 @@ import yaml
 from typer.testing import CliRunner
 
 from wordmark.cli import app
+from wordmark.docx_package import DocxPackage
 from wordmark import ooxml_engine
 
 
@@ -26,6 +27,30 @@ def test_add_comment_with_explicit_author_metadata(sample_docx: Path) -> None:
     assert report.comments[0].author == "Reviewer A"
     assert report.comments[0].initials == "RA"
     assert "tighten" in report.comments[0].text
+
+
+def test_add_comment_creates_comments_infrastructure(sample_docx: Path) -> None:
+    result = ooxml_engine.add_comment(
+        sample_docx,
+        selector="p:1",
+        text="Infrastructure creation check.",
+        author="Reviewer A",
+        initials="RA",
+        dry_run=False,
+    )
+    assert result.changed
+
+    pkg = DocxPackage.open(sample_docx)
+    assert pkg.has_part("word/comments.xml")
+    assert pkg.has_part("word/_rels/document.xml.rels")
+
+    rels_root = pkg.read_xml("word/_rels/document.xml.rels")
+    rel_types = [rel.get("Type") for rel in rels_root]
+    assert "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" in rel_types
+
+    content_types = pkg.read_xml("[Content_Types].xml")
+    override_types = [item.get("ContentType") for item in content_types]
+    assert "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" in override_types
 
 
 def test_cli_inspect_writes_sidecars(sample_docx: Path) -> None:

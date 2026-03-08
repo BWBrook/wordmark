@@ -43,6 +43,10 @@ make test-pure
 make test-external
 ```
 
+Hosted CI lanes:
+- `ci`: required/default GitHub Actions lane running `make test-pure` on Python `3.11` and `3.12`
+- `external-tools`: separate hosted integration lane running `make test-external` on Ubuntu with LibreOffice/UNO/rendering tools installed
+
 ## CLI commands
 ```bash
 uv run wordmark inspect <file.docx> --json

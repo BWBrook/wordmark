@@ -51,6 +51,15 @@ def _inject_ignorable_prefix_mismatch(path: Path) -> None:
             zout.writestr(name, parts[name])
 
 
+def _remove_comments_part(path: Path) -> None:
+    with ZipFile(path, "r") as zin:
+        parts = {name: zin.read(name) for name in zin.namelist() if name != "word/comments.xml"}
+
+    with ZipFile(path, "w", compression=ZIP_DEFLATED) as zout:
+        for name in sorted(parts.keys()):
+            zout.writestr(name, parts[name])
+
+
 @requires_render_tools
 def test_render_produces_pdf_and_pngs(sample_docx: Path, tmp_path: Path) -> None:
     out_dir = tmp_path / "render"
@@ -191,6 +200,35 @@ def test_verify_fails_on_ignorable_prefix_mismatch(sample_docx: Path, tmp_path: 
     compat = result.checks["compatibility_namespace_integrity"]
     assert compat["ok"] is False
     assert compat["missing_prefixes"] == ["w14", "wp14"]
+
+
+@requires_render_tools
+def test_verify_fails_on_comment_integrity_mismatch(monkeypatch, sample_docx: Path, tmp_path: Path) -> None:  # noqa: ANN001
+    before = tmp_path / "before.docx"
+    after = tmp_path / "after.docx"
+    shutil.copy2(sample_docx, before)
+    shutil.copy2(sample_docx, after)
+
+    from wordmark import ooxml_engine
+
+    ooxml_engine.add_comment(
+        after,
+        selector="p:1",
+        text="Break comment integrity",
+        author="Barry Brook",
+        initials="BB",
+        dry_run=False,
+    )
+    _remove_comments_part(after)
+
+    monkeypatch.setattr(verify_mod, "_render_diff", lambda *args, **kwargs: {"ok": True})
+
+    cfg = load_config(Path("wordmark.yaml"))
+    result = verify_docx(before, after, profile="business-docs", config=cfg)
+
+    assert result.passed is False
+    assert result.checks["comment_integrity"]["ok"] is False
+    assert result.checks["comment_integrity"]["orphan_doc_refs"] != []
 
 
 def test_convert_docx_to_pdf_reports_missing_soffice(monkeypatch, sample_docx: Path, tmp_path: Path) -> None:  # noqa: ANN001

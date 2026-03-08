@@ -162,3 +162,15 @@
 - Context: Config defaults were duplicated across dataclass field defaults, a hard-coded merge dictionary, and the repo `wordmark.yaml`, creating drift risk.
 - Decision: Derive loader defaults from `AppConfig` dataclass defaults, align the dataclass with the effective default profiles, and add tests that compare repo `wordmark.yaml` against code defaults.
 - Consequences: Effective defaults are centralized in code, and the sample repo config can no longer silently drift from the runtime baseline.
+
+## 2026-03-08 - ADR-025: Hosted CI uses a required pure lane and a separate external-tools lane
+- Status: accepted
+- Context: The repo now has explicit pure-Python and external-tool validation lanes, but without hosted CI there is no always-on signal for contributors or pull requests.
+- Decision: Add a required/default GitHub Actions workflow that runs `make test-pure` on Ubuntu across Python `3.11` and `3.12`, plus a separate hosted `external-tools` workflow (manual + nightly) that installs LibreOffice/UNO/rendering tools and runs `make test-external`.
+- Consequences: Pull requests get a stable fast signal without forcing every contribution through heavyweight host-tool setup, while the integration lane remains visible and reproducible.
+
+## 2026-03-08 - ADR-026: First `ooxml_engine` split is limited to review transforms
+- Status: accepted
+- Context: `ooxml_engine.py` is large enough to merit decomposition, but most of its text-localization and anchor logic is fidelity-sensitive and should not move until characterization coverage is stronger.
+- Decision: Extract only the review-transform cluster (`accept`/`reject`, author filtering, unwrap logic, move-range cleanup) into an internal `ooxml_review` module while keeping `wordmark.ooxml_engine.review_action(...)` as the integration point used by the CLI.
+- Consequences: The codebase gets a safer first decomposition slice with minimal behavior risk, and broader OOXML-engine breakup remains explicitly deferred.

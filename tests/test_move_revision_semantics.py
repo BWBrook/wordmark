@@ -157,6 +157,26 @@ def test_review_reject_handles_move_revisions_and_cleans_markers(tmp_path: Path)
     assert not root.xpath(".//w:moveFromRangeStart | .//w:moveFromRangeEnd", namespaces=NSMAP)
 
 
+def test_review_action_respects_author_filter_for_move_revisions(tmp_path: Path) -> None:
+    doc_path = tmp_path / "move-author-filter.docx"
+    _make_move_fixture(doc_path, move_to_author="Barry Brook", move_from_author="Barry Brook")
+
+    result = ooxml_engine.review_action(
+        doc_path,
+        mode="accept",
+        author="Someone Else",
+        actor="Barry Brook",
+        dry_run=False,
+    )
+    assert result.changed is False
+    assert result.details["transformed"] == {"insert": 0, "delete": 0, "move_to": 0, "move_from": 0}
+
+    review = ooxml_engine.list_review(doc_path)
+    revision_types = [item["type"] for item in review["revisions"]]
+    assert "move_to" in revision_types
+    assert "move_from" in revision_types
+
+
 def test_uno_normalization_covers_move_revisions(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-move-normalize.docx"
     _make_move_fixture(doc_path, move_to_author="Unknown Author", move_from_author="Unknown Author")
