@@ -79,9 +79,9 @@ Wordmark uses a hybrid model for manuscript collaboration:
 - feedback is normalized into structured sidecars and synthesized into safe patch proposals
 
 Current guarantees:
-- `manuscript synthesize --apply-safe` only applies deterministic exact-match edits
-- repeated matches are reported as ambiguous, not auto-applied
-- excerpt-based duplicate matches are reported as ambiguous, not auto-applied
+- `manuscript synthesize --apply-safe` applies deterministic source-aware edits when line anchors are available, otherwise falls back to deterministic exact-match edits
+- repeated matches without reliable source anchors are reported as ambiguous, not auto-applied
+- excerpt-based duplicate matches without reliable source anchors are reported as ambiguous, not auto-applied
 - imported DOCX comments/revisions are treated as review events, not as a lossless source backport
 - malformed round inputs fail fast rather than being silently repaired
 

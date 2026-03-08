@@ -10,6 +10,7 @@ Validation lanes:
 ```bash
 uv run pytest
 make test-pure
+make test-pure-cov
 make test-external
 make lint
 ```

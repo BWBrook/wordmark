@@ -192,3 +192,21 @@
 - Context: The repo had strong tests and CI but no fast static hygiene check for unused imports and similar maintenance issues.
 - Decision: Add `ruff` as a dev dependency, expose `make lint`, and run it in hosted CI as part of the default PR signal.
 - Consequences: Contributors get a fast, low-friction quality gate without introducing a heavy formatting or type-checking burden.
+
+## 2026-03-08 - ADR-030: Make manuscript safe-apply source-aware when anchors are available
+- Status: accepted
+- Context: The manuscript workflow previously relied mostly on exact-match replacement, which was safe but underused available source context from GitHub line anchors and anchored review notes.
+- Decision: When file/line anchors match the current source file, synthesize proposals against the anchored line slice rather than against global text only; keep exact-match fallback for unanchored inputs and continue marking unresolved duplicates as ambiguous.
+- Consequences: Safe apply is more source-aware without pretending DOCX feedback can be losslessly mapped back to source; ambiguous global replacements remain conservative.
+
+## 2026-03-08 - ADR-031: Third `ooxml_engine` split is limited to localized replacement logic
+- Status: accepted
+- Context: After review transforms and anchor resolution were extracted, the largest remaining concentration inside `ooxml_engine.py` was the localized replacement/rewrite subsystem.
+- Decision: Extract localized replacement helpers and paragraph rewrite logic into an internal `ooxml_replace` module, while keeping `ooxml_engine` as the public integration point used by CLI callers.
+- Consequences: `ooxml_engine.py` is further reduced without changing user-facing contracts, but localized replacement remains the highest-fidelity-risk OOXML area and still requires characterization-first changes.
+
+## 2026-03-08 - ADR-032: Add a conservative pure-lane coverage floor in CI
+- Status: accepted
+- Context: The repo had coverage reporting but no automated floor, leaving room for unnoticed regressions in test breadth.
+- Decision: Add `make test-pure-cov` with `pytest-cov` fail-under `80`, and use that in the hosted pure-Python CI lane.
+- Consequences: Coverage regressions in the required PR lane are now bounded, while the floor remains conservative enough not to create frequent noise during ongoing hardening work.

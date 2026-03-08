@@ -560,6 +560,71 @@ def test_manuscript_synthesize_marks_excerpt_based_duplicate_as_ambiguous(tmp_pa
     assert any(item["status"] == "ambiguous" for item in safe["proposals"])
 
 
+def test_manuscript_synthesize_anchored_note_rewrites_only_targeted_line(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nexample one\n\nexample two\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "anchored-note"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "manifest.json").write_text(json.dumps({"round_id": "anchored-note", "artifacts": {}}, ensure_ascii=True), encoding="utf-8")
+
+    notes = tmp_path / "feedback.md"
+    notes.write_text("chapter.md:3: replace 'example' with 'sample'\n", encoding="utf-8")
+    runner = CliRunner()
+    collect = runner.invoke(app, ["manuscript", "collect", str(round_dir), "--notes", str(notes), "--json"])
+    assert collect.exit_code == 0
+
+    synth = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--apply-safe", "--json"],
+    )
+    assert synth.exit_code == 0
+    updated = source.read_text(encoding="utf-8")
+    assert "sample one" in updated
+    assert "example two" in updated
+
+
+def test_manuscript_synthesize_skips_suggestion_for_different_source_file(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nAlpha line.\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "wrong-file"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "wrong-file",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-03-02T10:00:00Z",
+                        "anchor": {"file": "other.md", "line_start": 3, "line_end": 3},
+                        "content": {"summary": "Wrong file", "proposed_text": "Updated line.\n"},
+                        "trace": {"source_ref": "pull_comment:1"},
+                    }
+                ],
+                "counts": {"total": 1},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    safe = json.loads(Path(payload["outputs"]["safe_edits"]).read_text(encoding="utf-8"))
+    assert safe["proposals"] == []
+
+
 def test_manuscript_collect_missing_manifest_fails(tmp_path: Path) -> None:
     round_dir = tmp_path / "rounds" / "missing-manifest"
     round_dir.mkdir(parents=True, exist_ok=True)

@@ -18,9 +18,9 @@ Design intent:
 - Consolidated record: `feedback.bundle.json`.
 
 Current conservative guarantees:
-- `--apply-safe` only applies deterministic exact-match edits.
-- Repeated matches become `ambiguous`; they are reported, not auto-applied.
-- Excerpt-based duplicate matches also remain `ambiguous`; they are not auto-applied.
+- `--apply-safe` applies deterministic source-aware edits when line/file anchors are available, otherwise deterministic exact-match edits.
+- Repeated matches without reliable source anchors become `ambiguous`; they are reported, not auto-applied.
+- Excerpt-based duplicate matches without reliable source anchors also remain `ambiguous`; they are not auto-applied.
 - Reviewed DOCX comments/revisions are imported as feedback events and summaries, not as a lossless tracked-change backport to source.
 - Missing or malformed round artifacts fail fast so the operator sees the problem immediately.
 
@@ -93,9 +93,11 @@ uv run wordmark manuscript status artifacts/manuscript_rounds/<round_id> --json
 1. Prefer concise, actionable feedback in notes files.
 2. Use explicit replacement phrasing for automatable edits:
 `replace 'old phrase' with 'new phrase'`.
-3. Keep conceptual/structural guidance as comments, not forced line rewrites.
-4. For Word-oriented collaborators, use reviewed DOCX files for comments/revisions, then ingest via `manuscript collect`.
-5. Treat CriticMarkup export as optional reviewer UX, not canonical source.
+3. If you know the source location, prefer anchored notes syntax:
+`chapter.qmd:42: replace 'old phrase' with 'new phrase'`
+4. Keep conceptual/structural guidance as comments, not forced line rewrites.
+5. For Word-oriented collaborators, use reviewed DOCX files for comments/revisions, then ingest via `manuscript collect`.
+6. Treat CriticMarkup export as optional reviewer UX, not canonical source.
 
 ## Safety boundaries
 1. Do not overwrite source unintentionally:

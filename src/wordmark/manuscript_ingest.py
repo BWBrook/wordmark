@@ -52,6 +52,24 @@ def _parse_notes(notes_path: Path) -> list[FeedbackEvent]:
         text = re.sub(r"^\d+\.\s+", "", text)
         if not text:
             continue
+
+        anchor: dict[str, Any] = {
+            "file": str(notes_path),
+            "line_start": line_no,
+            "line_end": line_no,
+        }
+        anchored = re.match(
+            r"^(?P<file>[^:\s]+\.(?:md|qmd)):(?P<line_start>\d+)(?:-(?P<line_end>\d+))?:\s*(?P<body>.+)$",
+            text,
+        )
+        if anchored:
+            anchor = {
+                "file": anchored.group("file"),
+                "line_start": int(anchored.group("line_start")),
+                "line_end": int(anchored.group("line_end") or anchored.group("line_start")),
+            }
+            text = anchored.group("body").strip()
+
         events.append(
             FeedbackEvent(
                 event_id="",
@@ -60,11 +78,7 @@ def _parse_notes(notes_path: Path) -> list[FeedbackEvent]:
                 severity=_infer_severity(text),
                 author="notes",
                 created_at=_now_utc(),
-                anchor={
-                    "file": str(notes_path),
-                    "line_start": line_no,
-                    "line_end": line_no,
-                },
+                anchor=anchor,
                 content={
                     "summary": text,
                 },

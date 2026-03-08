@@ -41,6 +41,14 @@ def _line_slice(lines: list[str], start: int, end: int) -> str:
     return "".join(lines[start - 1 : e])
 
 
+def _anchor_targets_source(anchor: dict[str, Any], source_path: Path) -> bool:
+    raw_file = anchor.get("file")
+    if not isinstance(raw_file, str) or not raw_file:
+        return True
+    anchor_path = Path(raw_file)
+    return anchor_path == source_path or anchor_path.name == source_path.name
+
+
 def _proposal_from_event(event: dict[str, Any], source_path: Path, source_text: str, source_lines: list[str]) -> SafeEditProposal | None:
     content = event.get("content")
     anchor = event.get("anchor")
@@ -59,7 +67,13 @@ def _proposal_from_event(event: dict[str, Any], source_path: Path, source_text: 
     if kind == "suggestion" and proposed_text:
         line_start = anchor.get("line_start")
         line_end = anchor.get("line_end") or line_start
-        if isinstance(line_start, int) and isinstance(line_end, int) and line_start > 0 and line_end > 0:
+        if (
+            isinstance(line_start, int)
+            and isinstance(line_end, int)
+            and line_start > 0
+            and line_end > 0
+            and _anchor_targets_source(anchor, source_path)
+        ):
             current = _line_slice(source_lines, line_start, line_end)
             if current:
                 replacement = proposed_text
@@ -79,6 +93,29 @@ def _proposal_from_event(event: dict[str, Any], source_path: Path, source_text: 
     candidate = _extract_replace_directive(summary)
     if candidate:
         find_text, replace_text = candidate
+        line_start = anchor.get("line_start")
+        line_end = anchor.get("line_end") or line_start
+        if (
+            isinstance(line_start, int)
+            and isinstance(line_end, int)
+            and line_start > 0
+            and line_end > 0
+            and _anchor_targets_source(anchor, source_path)
+        ):
+            current = _line_slice(source_lines, line_start, line_end)
+            if current:
+                replacement = current.replace(find_text, replace_text, 1)
+                if replacement != current:
+                    return SafeEditProposal(
+                        proposal_id="",
+                        file=str(source_path),
+                        find_text=current,
+                        replace_text=replacement,
+                        match_policy="anchored_exact",
+                        status="proposed",
+                        origin_event_ids=[event_id],
+                        details={"directive": "replace_with", "line_start": line_start, "line_end": line_end},
+                    )
         return SafeEditProposal(
             proposal_id="",
             file=str(source_path),
@@ -92,6 +129,29 @@ def _proposal_from_event(event: dict[str, Any], source_path: Path, source_text: 
 
     excerpt = anchor.get("excerpt")
     if isinstance(excerpt, str) and excerpt and proposed_text:
+        line_start = anchor.get("line_start")
+        line_end = anchor.get("line_end") or line_start
+        if (
+            isinstance(line_start, int)
+            and isinstance(line_end, int)
+            and line_start > 0
+            and line_end > 0
+            and _anchor_targets_source(anchor, source_path)
+        ):
+            current = _line_slice(source_lines, line_start, line_end)
+            if current:
+                replacement = current.replace(excerpt, proposed_text, 1)
+                if replacement != current:
+                    return SafeEditProposal(
+                        proposal_id="",
+                        file=str(source_path),
+                        find_text=current,
+                        replace_text=replacement,
+                        match_policy="anchored_exact",
+                        status="proposed",
+                        origin_event_ids=[event_id],
+                        details={"directive": "excerpt_to_proposed_text", "line_start": line_start, "line_end": line_end},
+                    )
         if excerpt in source_text:
             return SafeEditProposal(
                 proposal_id="",
