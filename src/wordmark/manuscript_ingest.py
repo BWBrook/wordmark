@@ -382,6 +382,18 @@ def _timeline_markdown(bundle: FeedbackBundle) -> str:
     return "\n".join(lines)
 
 
+def _event_sort_key(event: FeedbackEvent) -> tuple[str, str, str, str, str]:
+    summary = str(event.content.get("summary", "")).strip()
+    source_ref = str(event.trace.get("source_ref", ""))
+    return (
+        event.created_at,
+        event.channel,
+        source_ref,
+        event.author,
+        summary,
+    )
+
+
 def collect_feedback(
     round_dir: Path,
     *,
@@ -413,6 +425,7 @@ def collect_feedback(
         events.extend(docx_events)
         warnings.extend(docx_warnings)
 
+    events = sorted(events, key=_event_sort_key)
     for idx, event in enumerate(events, start=1):
         event.event_id = f"evt-{idx:05d}"
 

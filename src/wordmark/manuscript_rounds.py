@@ -125,8 +125,6 @@ def prepare_round(
         raise ValueError(f"Round directory is not empty: {round_dir}")
 
     source = source.resolve()
-    snapshot_path = round_dir / f"source_snapshot{source.suffix.lower()}"
-    shutil.copy2(source, snapshot_path)
 
     commands: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -169,6 +167,9 @@ def prepare_round(
         if run["exit_code"] != 0:
             raise RuntimeError(f"Build command failed: {run['stderr']}")
         resolved_build_cmd = build_cmd
+
+    snapshot_path = round_dir / f"source_snapshot{source.suffix.lower()}"
+    shutil.copy2(source, snapshot_path)
 
     artifacts: dict[str, Any] = {
         "source_snapshot": {

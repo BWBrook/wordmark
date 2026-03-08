@@ -174,3 +174,21 @@
 - Context: `ooxml_engine.py` is large enough to merit decomposition, but most of its text-localization and anchor logic is fidelity-sensitive and should not move until characterization coverage is stronger.
 - Decision: Extract only the review-transform cluster (`accept`/`reject`, author filtering, unwrap logic, move-range cleanup) into an internal `ooxml_review` module while keeping `wordmark.ooxml_engine.review_action(...)` as the integration point used by the CLI.
 - Consequences: The codebase gets a safer first decomposition slice with minimal behavior risk, and broader OOXML-engine breakup remains explicitly deferred.
+
+## 2026-03-08 - ADR-027: External-tools CI should include one real Quarto-backed manuscript smoke build
+- Status: accepted
+- Context: The manuscript workflow had good characterization around mocked/default build behavior, but the hosted external-tools lane still did not exercise a real `.qmd` build path.
+- Decision: Extend the external-tools CI lane to install Quarto and run at least one real `.qmd` smoke test through the `manuscript prepare` default build path.
+- Consequences: The repo now validates one true end-to-end Quarto manuscript build in hosted CI without expanding the required pure-Python PR gate.
+
+## 2026-03-08 - ADR-028: Second `ooxml_engine` split is limited to anchor resolution
+- Status: accepted
+- Context: After review transforms were extracted, the next safest concentration to reduce was anchor normalization/resolution because it is heavily used but more bounded than localized replacement logic.
+- Decision: Extract anchor normalization and anchor resolution into an internal `ooxml_anchor` module, while keeping `AnchorResolutionError` and anchor-driven behavior accessible through `ooxml_engine`.
+- Consequences: `ooxml_engine.py` shrinks further with limited behavior risk, while localized replacement and rewrite policy stay in place for later, more heavily characterized phases.
+
+## 2026-03-08 - ADR-029: Add Ruff as the default lightweight lint gate
+- Status: accepted
+- Context: The repo had strong tests and CI but no fast static hygiene check for unused imports and similar maintenance issues.
+- Decision: Add `ruff` as a dev dependency, expose `make lint`, and run it in hosted CI as part of the default PR signal.
+- Consequences: Contributors get a fast, low-friction quality gate without introducing a heavy formatting or type-checking burden.

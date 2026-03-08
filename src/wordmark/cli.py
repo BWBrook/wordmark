@@ -26,7 +26,6 @@ from wordmark.edit_policy import (
     resolve_choice as _resolve_choice,
     resolve_edit_policy as _resolve_edit_policy,
 )
-from wordmark import interop_drift
 from wordmark.jsonio import dumps
 from wordmark import manuscript_ingest
 from wordmark import manuscript_rounds

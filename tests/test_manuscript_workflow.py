@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -9,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from wordmark.cli import app
+from wordmark.external_tools import quarto_available
 from wordmark import manuscript_ingest, manuscript_rounds
 from wordmark import ooxml_engine
 
@@ -18,6 +20,10 @@ def _write_docx(path: Path, text: str) -> Path:
     doc.add_paragraph(text)
     doc.save(path)
     return path
+
+
+def _sha256_text(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _prepare_round_with_docx(tmp_path: Path, *, round_id: str = "round1") -> tuple[dict, Path, Path]:
@@ -119,6 +125,66 @@ def test_manuscript_collect_ingests_notes_and_docx_feedback(tmp_path: Path) -> N
     assert Path(payload["timeline"]).exists()
 
 
+def test_manuscript_collect_docx_import_reports_only_new_review_state(tmp_path: Path) -> None:
+    _, _, round_dir = _prepare_round_with_docx(tmp_path, round_id="collect-docx-delta")
+    baseline = round_dir / "rendered.docx"
+
+    ooxml_engine.add_comment(
+        baseline,
+        selector="p:0",
+        text="Existing baseline comment.",
+        author="Barry Brook",
+        initials="BB",
+        dry_run=False,
+    )
+    ooxml_engine.apply_patch(
+        baseline,
+        patch_data={"operations": [{"type": "replace_text_once", "find": "Alpha", "replace": "Gamma"}]},
+        author="Barry Brook",
+        track_changes=True,
+        dry_run=False,
+    )
+
+    reviewed = tmp_path / "reviewed-delta.docx"
+    shutil.copy2(baseline, reviewed)
+    ooxml_engine.add_comment(
+        reviewed,
+        selector="p:0",
+        text="New reviewed comment.",
+        author="Barry Brook",
+        initials="BB",
+        dry_run=False,
+    )
+    ooxml_engine.apply_patch(
+        reviewed,
+        patch_data={"operations": [{"type": "replace_text_once", "find": "example", "replace": "sample"}]},
+        author="Barry Brook",
+        track_changes=True,
+        dry_run=False,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "manuscript",
+            "collect",
+            str(round_dir),
+            "--docx-reviewed",
+            str(reviewed),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["counts"]["by_channel"]["docx_comment"] == 1
+    assert payload["counts"]["by_channel"]["docx_revision"] >= 1
+
+    bundle = json.loads(Path(payload["bundle"]).read_text(encoding="utf-8"))
+    comment_events = [event for event in bundle["events"] if event["channel"] == "docx_comment"]
+    assert [event["content"]["summary"] for event in comment_events] == ["New reviewed comment."]
+
+
 @pytest.mark.github_integration
 def test_manuscript_collect_warns_when_gh_auth_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _, _, round_dir = _prepare_round_with_docx(tmp_path, round_id="collect-gh-missing")
@@ -206,6 +272,66 @@ def test_manuscript_collect_ingests_github_review_feedback(tmp_path: Path, monke
     assert payload["counts"]["by_kind"]["comment"] == 1
 
 
+@pytest.mark.github_integration
+def test_manuscript_collect_github_variant_uses_original_line_and_stable_ids(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, _, round_dir = _prepare_round_with_docx(tmp_path, round_id="collect-gh-variant")
+
+    monkeypatch.setattr(manuscript_ingest, "gh_available", lambda: True)
+    monkeypatch.setattr(manuscript_ingest, "gh_auth_available", lambda *, cwd=None: True)
+    monkeypatch.setattr(manuscript_ingest, "_origin_repo_slug", lambda cwd: "owner/repo")
+
+    def fake_gh_json(args: list[str], *, cwd: Path):
+        endpoint = args[1]
+        if endpoint.endswith("/pulls/123/comments"):
+            return (
+                [
+                    {
+                        "id": 21,
+                        "body": "Minor wording suggestion.",
+                        "original_line": 12,
+                        "path": "chapter.md",
+                        "created_at": "2026-03-02T09:00:00Z",
+                        "html_url": "https://example/pull/123#discussion_r21",
+                        "user": {"login": "reviewer1"},
+                    }
+                ],
+                None,
+            )
+        if endpoint.endswith("/issues/123/comments"):
+            return (
+                [
+                    {
+                        "id": 22,
+                        "body": "Please expand the methods note.",
+                        "created_at": "2026-03-02T09:05:00Z",
+                        "html_url": "https://example/pull/123#issuecomment-22",
+                        "user": {"login": "reviewer2"},
+                    }
+                ],
+                None,
+            )
+        return [], None
+
+    monkeypatch.setattr(manuscript_ingest, "_gh_json", fake_gh_json)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manuscript", "collect", str(round_dir), "--from-pr", "123", "--json"],
+    )
+    assert result.exit_code == 0
+
+    payload = json.loads(result.stdout)
+    bundle = json.loads(Path(payload["bundle"]).read_text(encoding="utf-8"))
+    assert [event["event_id"] for event in bundle["events"]] == ["evt-00001", "evt-00002"]
+    pr_event = bundle["events"][0]
+    assert pr_event["anchor"]["line_start"] == 12
+    assert pr_event["anchor"]["line_end"] == 12
+
+
 @pytest.mark.manuscript_build
 def test_manuscript_prepare_qmd_default_build_requires_quarto(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "chapter.qmd"
@@ -283,6 +409,39 @@ def test_manuscript_prepare_reports_build_command_failure(tmp_path: Path) -> Non
     assert "Build command failed" in str(result.exception)
 
 
+@pytest.mark.external_tools
+@pytest.mark.manuscript_build
+@pytest.mark.skipif(not quarto_available(), reason="quarto CLI unavailable")
+def test_manuscript_prepare_real_qmd_smoke_build(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.qmd"
+    source.write_text(
+        "---\ntitle: Test Chapter\nformat:\n  docx: default\n---\n\nAlpha example sentence.\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "manuscript",
+            "prepare",
+            str(source),
+            "--formats",
+            "docx",
+            "--out",
+            str(tmp_path / "rounds"),
+            "--round-id",
+            "qmd-real-smoke",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    manifest = json.loads(Path(payload["manifest"]).read_text(encoding="utf-8"))
+    assert "docx" in manifest["artifacts"]
+    assert (tmp_path / "rounds" / "qmd-real-smoke" / manifest["artifacts"]["docx"]["path"]).exists()
+
+
 def test_manuscript_synthesize_generates_patch_and_critic_without_mutating_source(tmp_path: Path) -> None:
     _, source, round_dir = _prepare_round_with_docx(tmp_path, round_id="synth1")
 
@@ -296,6 +455,7 @@ def test_manuscript_synthesize_generates_patch_and_critic_without_mutating_sourc
     assert collect.exit_code == 0
 
     before = source.read_text(encoding="utf-8")
+    before_hash = _sha256_text(source)
     synth = runner.invoke(
         app,
         [
@@ -324,6 +484,7 @@ def test_manuscript_synthesize_generates_patch_and_critic_without_mutating_sourc
     critic_text = Path(payload["outputs"]["critic"]).read_text(encoding="utf-8")
     assert "{--example--}{++sample++}" in critic_text
     assert source.read_text(encoding="utf-8") == before
+    assert _sha256_text(source) == before_hash
 
 
 def test_manuscript_synthesize_marks_repeated_text_replace_as_ambiguous(tmp_path: Path) -> None:
@@ -352,6 +513,80 @@ def test_manuscript_synthesize_marks_repeated_text_replace_as_ambiguous(tmp_path
     safe = json.loads(Path(payload["outputs"]["safe_edits"]).read_text(encoding="utf-8"))
     assert any(item["status"] == "ambiguous" for item in safe["proposals"])
     assert source.read_text(encoding="utf-8") == before
+
+
+def test_manuscript_synthesize_marks_excerpt_based_duplicate_as_ambiguous(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nshared excerpt one\n\nshared excerpt two\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "excerpt-ambiguous"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "excerpt-ambiguous",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-03-02T10:00:00Z",
+                        "anchor": {"excerpt": "shared excerpt"},
+                        "content": {
+                            "summary": "Replace shared excerpt",
+                            "proposed_text": "refined excerpt",
+                        },
+                        "trace": {"source_ref": "pull_comment:1"},
+                    }
+                ],
+                "counts": {"total": 1},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    safe = json.loads(Path(payload["outputs"]["safe_edits"]).read_text(encoding="utf-8"))
+    assert any(item["status"] == "ambiguous" for item in safe["proposals"])
+
+
+def test_manuscript_collect_missing_manifest_fails(tmp_path: Path) -> None:
+    round_dir = tmp_path / "rounds" / "missing-manifest"
+    round_dir.mkdir(parents=True, exist_ok=True)
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["manuscript", "collect", str(round_dir), "--json"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, FileNotFoundError)
+
+
+def test_manuscript_synthesize_invalid_bundle_fails(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nBody.\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "invalid-bundle"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps({"schema_version": 1, "round_id": "invalid-bundle", "events": {}}, ensure_ascii=True),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--json"],
+    )
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
 
 
 def test_manuscript_synthesize_apply_safe_updates_source(tmp_path: Path) -> None:

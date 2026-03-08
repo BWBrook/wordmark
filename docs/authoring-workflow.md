@@ -11,6 +11,7 @@ Validation lanes:
 uv run pytest
 make test-pure
 make test-external
+make lint
 ```
 
 ## Fixture layout

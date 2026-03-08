@@ -1,4 +1,4 @@
-# Wordmark Architecture (Phase 9)
+# Wordmark Architecture (Phase 10)
 
 ## Objective
 Provide a Linux-first, CLI-first workflow for:
@@ -60,6 +60,7 @@ Wordmark uses a dual-engine mutation strategy:
 - `src/wordmark/manuscript_rounds.py`: round preparation/build orchestration and status reporting.
 - `src/wordmark/manuscript_ingest.py`: feedback ingestion from notes, GitHub PR, and reviewed DOCX artifacts.
 - `src/wordmark/manuscript_synthesis.py`: patch proposal synthesis, optional safe apply, and CriticMarkup export.
+- `src/wordmark/ooxml_anchor.py`: internal anchor-resolution and anchor-normalization module.
 - `src/wordmark/ooxml_engine.py`: inspect/comment/edit/review operations.
 - `src/wordmark/ooxml_review.py`: internal review-transform module for accept/reject and move-range cleanup.
 - `src/wordmark/uno_engine.py`: UNO bridge, diagnostics, and author post-processing.
@@ -123,7 +124,8 @@ Manuscript round artifacts (default under `artifacts/manuscript_rounds/<round_id
 - `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
 - `raw` text mode is intentionally lossy for reviewer readability in tracked documents; use it for diagnostics, not human handoff summaries.
 - Automatic DOCX tracked-change backport to `.md/.qmd` is intentionally out-of-scope in phase 7; only deterministic text-safe proposals can be auto-applied.
-- The first DOCX-core decomposition slice is intentionally limited to review transforms; anchor resolution and localized replacement logic remain in `ooxml_engine.py`.
+- The first DOCX-core decomposition slice was limited to review transforms; the second slice now moves anchor resolution into `ooxml_anchor.py`.
+- Localized replacement and rewrite logic remain in `ooxml_engine.py` and are still treated as the most fidelity-sensitive OOXML code.
 
 Verify gate notes:
 - verification now includes OOXML compatibility namespace integrity checks (for example `mc:Ignorable` token declarations) to catch Word recovery-risk files before handoff.

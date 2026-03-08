@@ -1,4 +1,4 @@
-.PHONY: sync test test-pure test-external check
+.PHONY: sync test test-pure test-external lint check
 
 sync:
 	uv sync --extra dev
@@ -12,4 +12,7 @@ test-pure:
 test-external:
 	uv run pytest -m "external_tools"
 
-check: test
+lint:
+	uv run ruff check .
+
+check: test lint

@@ -20,7 +20,9 @@ Design intent:
 Current conservative guarantees:
 - `--apply-safe` only applies deterministic exact-match edits.
 - Repeated matches become `ambiguous`; they are reported, not auto-applied.
+- Excerpt-based duplicate matches also remain `ambiguous`; they are not auto-applied.
 - Reviewed DOCX comments/revisions are imported as feedback events and summaries, not as a lossless tracked-change backport to source.
+- Missing or malformed round artifacts fail fast so the operator sees the problem immediately.
 
 ## Command sequence
 ### 1) Prepare a review round

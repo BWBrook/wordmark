@@ -18,6 +18,7 @@ uv run wordmark --help
 uv run pytest
 make test-pure
 make test-external
+make lint
 ```
 
 ## Environment contract
@@ -41,11 +42,14 @@ make test-pure
 
 # Host-tool integration checks only
 make test-external
+
+# Lint
+make lint
 ```
 
 Hosted CI lanes:
-- `ci`: required/default GitHub Actions lane running `make test-pure` on Python `3.11` and `3.12`
-- `external-tools`: separate hosted integration lane running `make test-external` on Ubuntu with LibreOffice/UNO/rendering tools installed
+- `ci`: required/default GitHub Actions lane running `make lint` and `make test-pure`
+- `external-tools`: separate hosted integration lane running `make test-external` on Ubuntu with LibreOffice/UNO/rendering tools installed plus a real Quarto-backed `.qmd` smoke build
 
 ## CLI commands
 ```bash
@@ -77,7 +81,9 @@ Wordmark uses a hybrid model for manuscript collaboration:
 Current guarantees:
 - `manuscript synthesize --apply-safe` only applies deterministic exact-match edits
 - repeated matches are reported as ambiguous, not auto-applied
+- excerpt-based duplicate matches are reported as ambiguous, not auto-applied
 - imported DOCX comments/revisions are treated as review events, not as a lossless source backport
+- malformed round inputs fail fast rather than being silently repaired
 
 Core commands:
 ```bash

@@ -223,6 +223,64 @@ def test_cli_comment_add_supports_anchor_json(tmp_path: Path) -> None:
     assert payload["operation"]["details"]["paragraph_index"] == 3
 
 
+def test_cli_comment_add_supports_anchor_occurrence(tmp_path: Path) -> None:
+    doc_path = tmp_path / "comment_anchor_occurrence.docx"
+    doc = Document()
+    doc.add_paragraph("Repeated paragraph.")
+    doc.add_paragraph("Divider")
+    doc.add_paragraph("Repeated paragraph.")
+    doc.save(doc_path)
+
+    runner = CliRunner()
+    anchor_json = json.dumps({"expected_text": "Repeated paragraph.", "occurrence": 2})
+    result = runner.invoke(
+        app,
+        [
+            "comment",
+            "add",
+            str(doc_path),
+            "--anchor-json",
+            anchor_json,
+            "--text",
+            "Comment via anchor occurrence",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["operation"]["details"]["paragraph_index"] == 2
+
+
+def test_preflight_routes_risky_markup_to_uno(tmp_path: Path) -> None:
+    doc_path = tmp_path / "risky_markup.docx"
+    doc = Document()
+    paragraph = doc.add_paragraph()
+    paragraph.add_run("Alpha ")
+    risky_run = paragraph.add_run()
+    risky_run.add_break()
+    risky_run.add_text("target")
+    doc.save(doc_path)
+
+    report = ooxml_engine.preflight_patch(
+        doc_path,
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "target",
+                    "replace": "replacement",
+                }
+            ]
+        },
+        track_changes=True,
+        allow_paragraph_rewrite_tracked=False,
+    )
+    op = report["operations"][0]
+    assert op["classification"] == "unsupported_high_risk"
+    assert op["reason_code"] == "risky_markup_detected"
+    assert op["recommended_engine"] == "uno"
+
+
 def test_review_prepare_merge_emits_checklist(sample_docx: Path, tmp_path: Path) -> None:
     out_path = tmp_path / "merge_report.json"
     runner = CliRunner()
