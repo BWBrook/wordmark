@@ -7,19 +7,16 @@ import subprocess
 from docx import Document
 import pytest
 
+from wordmark.external_tools import system_uno_available
 from wordmark import ooxml_engine, uno_engine
 
 
-def _has_system_uno() -> bool:
-    proc = subprocess.run(
-        ["/usr/bin/python3", "-c", "import uno"],
-        capture_output=True,
-        text=True,
-    )
-    return proc.returncode == 0
+pytestmark = [
+    pytest.mark.external_tools,
+    pytest.mark.uno,
+    pytest.mark.skipif(not system_uno_available(), reason="System python UNO bindings unavailable"),
+]
 
-
-@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
 def test_uno_fallback_replace_text_global(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-test.docx"
     doc = Document()
@@ -60,7 +57,6 @@ def test_uno_fallback_replace_text_global(tmp_path: Path) -> None:
     assert "Fallback" in report.text_value
 
 
-@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
 def test_uno_fallback_replace_text_once_occurrence_and_author(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-once.docx"
     doc = Document()
@@ -98,7 +94,6 @@ def test_uno_fallback_replace_text_once_occurrence_and_author(tmp_path: Path) ->
     assert any(rev.author == "Barry Brook" for rev in report.revisions)
 
 
-@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
 def test_parallel_uno_writes_are_serialized_by_lock(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-lock.docx"
     doc = Document()
@@ -138,7 +133,6 @@ def test_parallel_uno_writes_are_serialized_by_lock(tmp_path: Path) -> None:
     assert "DELTA epsilon zeta" in merged
 
 
-@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
 def test_uno_replace_span_once_inserts_without_deleting_suffix(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-span-insert.docx"
     doc = Document()
@@ -176,7 +170,6 @@ def test_uno_replace_span_once_inserts_without_deleting_suffix(tmp_path: Path) -
     assert "saturation" not in deleted
 
 
-@pytest.mark.skipif(not _has_system_uno(), reason="System python UNO bindings unavailable")
 def test_uno_replace_span_once_deletes_hyphen_only(tmp_path: Path) -> None:
     doc_path = tmp_path / "uno-span-delete.docx"
     doc = Document()

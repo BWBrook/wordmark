@@ -8,10 +8,10 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
-from shutil import which
 import subprocess
 from typing import Any
 
+from wordmark.external_tools import gh_auth_available, gh_available
 from wordmark.manuscript_models import FeedbackBundle, FeedbackEvent, SCHEMA_VERSION
 from wordmark.manuscript_rounds import load_manifest
 from wordmark.sidecar import write_json, write_text
@@ -121,12 +121,11 @@ def _collect_github_pr_feedback(*, from_pr: str, cwd: Path) -> tuple[list[Feedba
     warnings: list[str] = []
     events: list[FeedbackEvent] = []
 
-    if which("gh") is None:
+    if not gh_available():
         warnings.append("gh CLI is not installed; skipping GitHub PR ingestion.")
         return events, warnings
 
-    auth = subprocess.run(["gh", "auth", "status", "-h", "github.com"], cwd=cwd, capture_output=True, text=True)
-    if auth.returncode != 0:
+    if not gh_auth_available(cwd=cwd):
         warnings.append("gh auth is not available; skipping GitHub PR ingestion.")
         return events, warnings
 

@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+from wordmark.external_tools import missing_binaries
+
 
 class RenderError(RuntimeError):
     """Raised when rendering commands fail."""
@@ -26,6 +28,9 @@ def _run(cmd: list[str]) -> None:
 
 
 def convert_docx_to_pdf(docx_path: Path, out_dir: Path) -> Path:
+    missing = missing_binaries("soffice")
+    if missing:
+        raise RenderError(f"Missing required render tool(s): {', '.join(missing)}")
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="wordmark_lo_profile_") as profile_dir:
         profile_uri = Path(profile_dir).as_uri()
@@ -51,6 +56,9 @@ def convert_docx_to_pdf(docx_path: Path, out_dir: Path) -> Path:
 
 
 def convert_pdf_to_png(pdf_path: Path, out_prefix: Path) -> list[Path]:
+    missing = missing_binaries("pdftoppm")
+    if missing:
+        raise RenderError(f"Missing required render tool(s): {', '.join(missing)}")
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
     cmd = ["pdftoppm", "-png", str(pdf_path), str(out_prefix)]
     _run(cmd)

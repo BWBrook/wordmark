@@ -7,10 +7,11 @@ from types import SimpleNamespace
 import pytest
 from typer.testing import CliRunner
 
-from wordmark.cli import _prepare_uno_precision_patch, app
+from wordmark.cli import app
 from wordmark.models import OperationResult
 from wordmark import ooxml_engine
 from wordmark import uno_engine
+from wordmark.uno_precision import prepare_uno_precision_patch
 
 
 def _write_patch(path: Path, payload: dict) -> Path:
@@ -216,7 +217,7 @@ def test_prepare_uno_precision_patch_rewrites_insertion_to_suffix_anchor(sample_
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    prepared, info = prepare_uno_precision_patch(sample_docx, patch)
     assert info is not None
     assert info["status"] == "rewritten"
     assert info["rewritten_operations"] == 1
@@ -313,7 +314,7 @@ def test_prepare_uno_precision_patch_widens_punctuation_delta_with_context(tmp_p
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    prepared, info = prepare_uno_precision_patch(doc_path, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
 
@@ -336,7 +337,7 @@ def test_prepare_uno_precision_patch_rewrites_tail_append_without_suffix(sample_
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    prepared, info = prepare_uno_precision_patch(sample_docx, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
 
@@ -366,7 +367,7 @@ def test_prepare_uno_precision_patch_rewrites_sentence_to_internal_span(tmp_path
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    prepared, info = prepare_uno_precision_patch(doc_path, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
 
@@ -389,7 +390,7 @@ def test_prepare_uno_precision_patch_expands_single_token_boundaries(sample_docx
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    prepared, info = prepare_uno_precision_patch(sample_docx, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
 
@@ -419,7 +420,7 @@ def test_prepare_uno_precision_patch_avoids_partial_word_boundary(tmp_path: Path
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(doc_path, patch)
+    prepared, info = prepare_uno_precision_patch(doc_path, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
 
@@ -442,7 +443,7 @@ def test_prepare_uno_precision_patch_splits_disjoint_word_changes(sample_docx: P
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    prepared, info = prepare_uno_precision_patch(sample_docx, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
     result = info["operation_results"][0]
@@ -468,7 +469,7 @@ def test_prepare_uno_precision_patch_splits_article_drop_and_late_insert(sample_
         ]
     }
 
-    prepared, info = _prepare_uno_precision_patch(sample_docx, patch)
+    prepared, info = prepare_uno_precision_patch(sample_docx, patch)
     assert info is not None
     assert info["rewritten_operations"] == 1
     result = info["operation_results"][0]

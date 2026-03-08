@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +57,7 @@ class AppConfig:
     allow_paragraph_rewrite_tracked: bool = False
     fallback_policy: FallbackPolicy = field(default_factory=FallbackPolicy)
     comment_fallback: CommentFallbackConfig = field(default_factory=CommentFallbackConfig)
-    fidelity_profiles: tuple[str, ...] = ("business-docs",)
+    fidelity_profiles: tuple[str, ...] = ("business-docs", "review-edit")
     fidelity_profile_settings: dict[str, FidelityProfileConfig] = field(
         default_factory=lambda: {
             "business-docs": FidelityProfileConfig(render_diff_threshold=0.02, max_page_growth=0),
@@ -70,6 +70,10 @@ class AppConfig:
 
 
 DEFAULT_CONFIG_PATH = Path("wordmark.yaml")
+
+
+def _default_config_data() -> dict[str, Any]:
+    return asdict(AppConfig())
 
 
 def _merge_dict(base: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -88,50 +92,7 @@ def load_config(path: Path | None = None) -> AppConfig:
     if cfg_path.exists():
         raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
 
-    defaults = {
-        "default_author": "Barry Brook",
-        "default_initials": "BB",
-        "track_changes_default": True,
-        "engine_order": ["ooxml", "uno"],
-        "fidelity_mode": "strict",
-        "allow_paragraph_rewrite_tracked": False,
-        "fallback_policy": {
-            "on_ooxml_unsupported": "uno",
-            "on_uno_fail": "comment",
-        },
-        "comment_fallback": {
-            "enabled": True,
-            "template": (
-                "Suggested edit: replace '{find}' with '{replace}'. "
-                "Reason: {reason}. Classification: {classification}."
-            ),
-            "anchor_strategy": "best-effort-match",
-        },
-        "fidelity_profiles": ["business-docs", "review-edit"],
-        "fidelity_profile_settings": {
-            "business-docs": {
-                "render_diff_threshold": 0.02,
-                "max_page_growth": 0,
-            },
-            "review-edit": {
-                "render_diff_threshold": 0.12,
-                "max_page_growth": 2,
-            },
-        },
-        "sidecar": {
-            "enabled": True,
-            "paths": {
-                "text": "artifacts/{stem}.text.md",
-                "comments": "artifacts/{stem}.comments.json",
-                "revisions": "artifacts/{stem}.revisions.json",
-                "xml_manifest": "artifacts/{stem}.xml-manifest.json",
-                "report": "artifacts/{stem}.report.json",
-                "render_diff": "artifacts/{stem}.render",
-            },
-        },
-        "transcript_path": "artifacts/transcripts/operations.jsonl",
-        "edited_output_dir": "examples/edited",
-    }
+    defaults = _default_config_data()
     merged = _merge_dict(defaults, raw)
     paths = SidecarPaths(**merged["sidecar"]["paths"])
     sidecar = SidecarConfig(enabled=bool(merged["sidecar"]["enabled"]), paths=paths)

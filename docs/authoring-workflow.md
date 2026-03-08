@@ -6,6 +6,13 @@ uv sync --extra dev
 uv run wordmark --help
 ```
 
+Validation lanes:
+```bash
+uv run pytest
+make test-pure
+make test-external
+```
+
 ## Fixture layout
 - Keep immutable baselines in `examples/canonical/`.
 - Write generated edits to `examples/edited/`.

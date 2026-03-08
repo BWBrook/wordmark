@@ -16,6 +16,31 @@ Wordmark is a Linux-first, CLI-first toolkit for review workflows across `.docx`
 uv sync --extra dev
 uv run wordmark --help
 uv run pytest
+make test-pure
+make test-external
+```
+
+## Environment contract
+Core Python runtime:
+- Python `>=3.11`
+- `uv` for environment management
+
+Host-installed tools used by optional workflows:
+- `soffice` and `pdftoppm` for render/verify image-based checks
+- system UNO bindings on `/usr/bin/python3` for LibreOffice fallback editing
+- `quarto` for default `.qmd` manuscript builds
+- `gh` plus `gh auth status` for GitHub PR feedback ingestion
+
+Conservative local validation paths:
+```bash
+# Full local suite
+uv run pytest
+
+# Pure-Python checks only
+make test-pure
+
+# Host-tool integration checks only
+make test-external
 ```
 
 ## CLI commands
@@ -44,6 +69,11 @@ Wordmark uses a hybrid model for manuscript collaboration:
 - canonical source stays in `.md`/`.qmd`
 - reviewers can contribute via PR comments/suggestions, notes markdown, and optional DOCX review files
 - feedback is normalized into structured sidecars and synthesized into safe patch proposals
+
+Current guarantees:
+- `manuscript synthesize --apply-safe` only applies deterministic exact-match edits
+- repeated matches are reported as ambiguous, not auto-applied
+- imported DOCX comments/revisions are treated as review events, not as a lossless source backport
 
 Core commands:
 ```bash

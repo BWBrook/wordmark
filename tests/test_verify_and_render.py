@@ -8,13 +8,19 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from PIL import Image
+import pytest
 from typer.testing import CliRunner
 
 from wordmark.config import load_config
 from wordmark.cli import app
-from wordmark.render import render_docx
+from wordmark.external_tools import render_tools_available
+from wordmark.render import RenderError, convert_docx_to_pdf, render_docx
 from wordmark import verify as verify_mod
 from wordmark.verify import verify_docx
+
+
+pytestmark = [pytest.mark.external_tools, pytest.mark.rendering]
+requires_render_tools = pytest.mark.skipif(not render_tools_available(), reason="Render tools unavailable: soffice/pdftoppm")
 
 
 def _inject_ignorable_prefix_mismatch(path: Path) -> None:
@@ -45,6 +51,7 @@ def _inject_ignorable_prefix_mismatch(path: Path) -> None:
             zout.writestr(name, parts[name])
 
 
+@requires_render_tools
 def test_render_produces_pdf_and_pngs(sample_docx: Path, tmp_path: Path) -> None:
     out_dir = tmp_path / "render"
     output = render_docx(sample_docx, out_dir)
@@ -52,6 +59,7 @@ def test_render_produces_pdf_and_pngs(sample_docx: Path, tmp_path: Path) -> None
     assert len(output.png_paths) >= 1
 
 
+@requires_render_tools
 def test_verify_identical_documents_pass(sample_docx: Path, tmp_path: Path) -> None:
     before = tmp_path / "before.docx"
     after = tmp_path / "after.docx"
@@ -65,6 +73,7 @@ def test_verify_identical_documents_pass(sample_docx: Path, tmp_path: Path) -> N
     assert result.checks["render_diff"]["ok"]
 
 
+@requires_render_tools
 def test_verify_can_persist_render_artifacts(sample_docx: Path, tmp_path: Path) -> None:
     before = tmp_path / "before.docx"
     after = tmp_path / "after.docx"
@@ -118,6 +127,7 @@ def test_render_diff_page_growth_tolerance(monkeypatch, sample_docx: Path, tmp_p
     assert tolerant["page_growth_ok"] is True
 
 
+@requires_render_tools
 def test_verify_review_edit_profile_reasoning(sample_docx: Path, tmp_path: Path) -> None:
     before = tmp_path / "before.docx"
     after = tmp_path / "after.docx"
@@ -142,6 +152,7 @@ def test_verify_review_edit_profile_reasoning(sample_docx: Path, tmp_path: Path)
     assert set(revisions["delta"].keys()) == {"insert", "delete", "move_to", "move_from", "total"}
 
 
+@requires_render_tools
 def test_cli_verify_emits_schema_v2(sample_docx: Path, tmp_path: Path) -> None:
     before = tmp_path / "before.docx"
     after = tmp_path / "after.docx"
@@ -164,6 +175,7 @@ def test_cli_verify_emits_schema_v2(sample_docx: Path, tmp_path: Path) -> None:
     }
 
 
+@requires_render_tools
 def test_verify_fails_on_ignorable_prefix_mismatch(sample_docx: Path, tmp_path: Path) -> None:
     before = tmp_path / "before.docx"
     after = tmp_path / "after.docx"
@@ -179,3 +191,10 @@ def test_verify_fails_on_ignorable_prefix_mismatch(sample_docx: Path, tmp_path: 
     compat = result.checks["compatibility_namespace_integrity"]
     assert compat["ok"] is False
     assert compat["missing_prefixes"] == ["w14", "wp14"]
+
+
+def test_convert_docx_to_pdf_reports_missing_soffice(monkeypatch, sample_docx: Path, tmp_path: Path) -> None:  # noqa: ANN001
+    monkeypatch.setattr("wordmark.render.missing_binaries", lambda *names: ["soffice"])
+
+    with pytest.raises(RenderError, match="Missing required render tool"):
+        convert_docx_to_pdf(sample_docx, tmp_path / "render")

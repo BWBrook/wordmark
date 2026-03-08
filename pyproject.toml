@@ -28,6 +28,13 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = [
+  "external_tools: tests that depend on host-installed external tools",
+  "rendering: tests that require soffice and pdftoppm",
+  "uno: tests that require system UNO bindings",
+  "manuscript_build: tests that require quarto",
+  "github_integration: tests that exercise gh-based manuscript review ingestion",
+]
 
 [tool.coverage.run]
 source = ["wordmark"]

@@ -17,6 +17,11 @@ Design intent:
   - Reviewed DOCX files (comments/revisions imported as events).
 - Consolidated record: `feedback.bundle.json`.
 
+Current conservative guarantees:
+- `--apply-safe` only applies deterministic exact-match edits.
+- Repeated matches become `ambiguous`; they are reported, not auto-applied.
+- Reviewed DOCX comments/revisions are imported as feedback events and summaries, not as a lossless tracked-change backport to source.
+
 ## Command sequence
 ### 1) Prepare a review round
 ```bash

@@ -150,3 +150,15 @@
   4. synthesizes deterministic safe edit proposals with explicit opt-in apply (`--apply-safe`),
   5. treats DOCX backport automation as out-of-scope for this phase.
 - Consequences: Wordmark now supports mixed collaboration styles with auditable artifacts and low-risk source mutation semantics, while avoiding brittle auto-translation of arbitrary DOCX tracked revisions into Markdown.
+
+## 2026-03-08 - ADR-023: Use a local-first environment contract with marked external-tool tests
+- Status: accepted
+- Context: The repo depends on host-installed tools (`soffice`, `pdftoppm`, system UNO, `quarto`, `gh`) for important workflows, but not every development environment will provide all of them.
+- Decision: Keep the default local workflow as the source of truth for now, add explicit pytest markers (`external_tools`, `rendering`, `uno`, `manuscript_build`, `github_integration`), add local `make test-pure` / `make test-external` lanes, and improve runtime/tool-missing diagnostics.
+- Consequences: Developers can separate pure-Python validation from host-tool integration checks without changing default behavior, and missing dependencies fail more clearly.
+
+## 2026-03-08 - ADR-024: Make `AppConfig` dataclass defaults the code source of truth
+- Status: accepted
+- Context: Config defaults were duplicated across dataclass field defaults, a hard-coded merge dictionary, and the repo `wordmark.yaml`, creating drift risk.
+- Decision: Derive loader defaults from `AppConfig` dataclass defaults, align the dataclass with the effective default profiles, and add tests that compare repo `wordmark.yaml` against code defaults.
+- Consequences: Effective defaults are centralized in code, and the sample repo config can no longer silently drift from the runtime baseline.
