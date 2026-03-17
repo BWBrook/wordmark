@@ -1,6 +1,6 @@
 # wordmark
 
-Wordmark is a Linux-first, CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts.
+Wordmark is a CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts, with Linux-first origins and growing macOS support.
 
 ## Goals
 - Open and inspect `.docx` review state (comments and revisions)
@@ -21,6 +21,33 @@ make test-external
 make lint
 ```
 
+## macOS notes
+
+Wordmark's pure-Python lane works on macOS with:
+
+```bash
+uv sync --extra dev
+make test-pure
+make lint
+```
+
+Optional host-tool workflows on macOS use:
+- LibreOffice for `soffice` rendering and UNO fallback editing
+- `pdftoppm` for render verification
+- Quarto for default `.qmd` manuscript builds
+
+Homebrew setup that matches the current macOS integration path:
+
+```bash
+brew install poppler
+brew install --cask libreoffice quarto
+```
+
+Notes:
+- Wordmark now probes common macOS install locations for `soffice`, LibreOffice's embedded Python launcher, and the Quarto cask binary when they are not on `PATH`.
+- render/verify and Quarto-backed manuscript flows are supported on macOS when those tools are installed
+- UNO fallback remains disabled by default on macOS because LibreOffice's embedded Python launcher is not yet a stable non-interactive probe target on this host; treat it as experimental only
+
 ## Environment contract
 Core Python runtime:
 - Python `>=3.11`
@@ -28,7 +55,7 @@ Core Python runtime:
 
 Host-installed tools used by optional workflows:
 - `soffice` and `pdftoppm` for render/verify image-based checks
-- system UNO bindings on `/usr/bin/python3` for LibreOffice fallback editing
+- LibreOffice-accessible UNO bindings for fallback editing
 - `quarto` for default `.qmd` manuscript builds
 - `gh` plus `gh auth status` for GitHub PR feedback ingestion
 

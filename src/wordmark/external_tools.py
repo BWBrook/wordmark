@@ -2,13 +2,66 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 
 
+def _existing(paths: list[Path]) -> list[Path]:
+    return [path for path in paths if path.exists() and path.is_file()]
+
+
+def _candidate_paths(name: str) -> list[Path]:
+    candidates: list[Path] = []
+    system = platform.system()
+
+    if system == "Darwin":
+        if name == "soffice":
+            candidates.extend(
+                [
+                    Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+                ]
+            )
+            candidates.extend(sorted(Path("/opt/homebrew/Caskroom").glob("libreoffice/*/soffice.wrapper.sh"), reverse=True))
+            candidates.extend(
+                sorted(
+                    Path("/opt/homebrew/Caskroom").glob("libreoffice/*/LibreOffice.app/Contents/MacOS/soffice"),
+                    reverse=True,
+                )
+            )
+        elif name == "quarto":
+            candidates.extend(
+                [
+                    Path("/Applications/quarto/bin/quarto"),
+                ]
+            )
+            candidates.extend(sorted(Path("/opt/homebrew/Caskroom").glob("quarto/*/quarto"), reverse=True))
+        elif name == "libreoffice_python":
+            candidates.extend(
+                [
+                    Path("/Applications/LibreOffice.app/Contents/Resources/python"),
+                ]
+            )
+            candidates.extend(
+                sorted(
+                    Path("/opt/homebrew/Caskroom").glob("libreoffice/*/LibreOffice.app/Contents/Resources/python"),
+                    reverse=True,
+                )
+            )
+
+    return _existing(candidates)
+
+
 def binary_path(name: str) -> str | None:
-    return shutil.which(name)
+    resolved = shutil.which(name)
+    if resolved is not None:
+        return resolved
+
+    for candidate in _candidate_paths(name):
+        return str(candidate)
+    return None
 
 
 def binary_available(name: str) -> bool:
@@ -44,12 +97,25 @@ def gh_auth_available(*, cwd: Path | None = None) -> bool:
 
 
 def system_uno_available() -> bool:
-    python_bin = Path("/usr/bin/python3")
-    if not python_bin.exists():
+    if platform.system() == "Darwin" and os.getenv("WORDMARK_ENABLE_MACOS_UNO") != "1":
+        # LibreOffice's embedded Python wrapper currently hangs on this host for a
+        # simple `import uno` probe, so macOS UNO remains explicit opt-in until a
+        # stable non-interactive invocation path is proven.
         return False
-    proc = subprocess.run(
-        [str(python_bin), "-c", "import uno"],
-        capture_output=True,
-        text=True,
-    )
+
+    python_bin = binary_path("libreoffice_python")
+    if python_bin is None:
+        python_path = Path("/usr/bin/python3")
+        if not python_path.exists():
+            return False
+        python_bin = str(python_path)
+    try:
+        proc = subprocess.run(
+            [str(python_bin), "-c", "import uno"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return proc.returncode == 0

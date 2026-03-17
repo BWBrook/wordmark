@@ -210,3 +210,9 @@
 - Context: The repo had coverage reporting but no automated floor, leaving room for unnoticed regressions in test breadth.
 - Decision: Add `make test-pure-cov` with `pytest-cov` fail-under `80`, and use that in the hosted pure-Python CI lane.
 - Consequences: Coverage regressions in the required PR lane are now bounded, while the floor remains conservative enough not to create frequent noise during ongoing hardening work.
+
+## 2026-03-17 - ADR-033: macOS should auto-discover render and Quarto tools, but keep UNO explicit
+- Status: accepted
+- Context: On this macOS host, Homebrew cask installs for LibreOffice and Quarto did not consistently expose binaries on `PATH`, while LibreOffice's embedded Python wrapper hung on a simple non-interactive `import uno` probe.
+- Decision: Add macOS-aware binary discovery for `soffice` and `quarto`, keep render/verify and Quarto-backed manuscript workflows available on macOS, and leave UNO fallback disabled by default on macOS unless explicitly opt-in via `WORDMARK_ENABLE_MACOS_UNO=1`.
+- Consequences: macOS becomes a supported environment for the repo's pure lane plus render/Quarto integration without pretending UNO fallback is stable there yet; Linux behavior remains unchanged.

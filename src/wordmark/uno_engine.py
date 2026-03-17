@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from collections import Counter
 import json
+import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import tempfile
@@ -16,6 +18,7 @@ from typing import Any
 
 from wordmark.constants import NSMAP, W_NS
 from wordmark.docx_package import DocxPackage
+from wordmark.external_tools import binary_path
 from wordmark.models import OperationResult
 
 DOC_PART = "word/document.xml"
@@ -141,6 +144,12 @@ def apply_patch(
     if not script_path.exists():
         raise UnoEngineError(f"UNO helper script missing: {script_path}")
 
+    if platform.system() == "Darwin" and os.getenv("WORDMARK_ENABLE_MACOS_UNO") != "1":
+        raise UnoEngineError(
+            "UNO fallback is disabled by default on macOS. "
+            "Set WORDMARK_ENABLE_MACOS_UNO=1 only if you are intentionally experimenting with LibreOffice's embedded Python."
+        )
+
     if dry_run:
         return OperationResult.now(
             command="edit apply",
@@ -164,12 +173,16 @@ def apply_patch(
         out_path = Path(tmpdir) / "result.json"
         patch_path.write_text(json.dumps(patch_data, ensure_ascii=True), encoding="utf-8")
 
-        python_bin = Path("/usr/bin/python3")
-        if not python_bin.exists():
-            resolved = shutil.which("python3")
-            if resolved is None:
-                raise UnoEngineError("No python3 interpreter available for UNO fallback script")
-            python_bin = Path(resolved)
+        resolved_uno_python = binary_path("libreoffice_python")
+        if resolved_uno_python is not None:
+            python_bin = Path(resolved_uno_python)
+        else:
+            python_bin = Path("/usr/bin/python3")
+            if not python_bin.exists():
+                resolved = shutil.which("python3")
+                if resolved is None:
+                    raise UnoEngineError("No python3 interpreter available for UNO fallback script")
+                python_bin = Path(resolved)
 
         cmd = [
             str(python_bin),

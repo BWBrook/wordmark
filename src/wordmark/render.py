@@ -7,7 +7,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from wordmark.external_tools import missing_binaries
+from wordmark.external_tools import binary_path, missing_binaries
 
 
 class RenderError(RuntimeError):
@@ -31,11 +31,14 @@ def convert_docx_to_pdf(docx_path: Path, out_dir: Path) -> Path:
     missing = missing_binaries("soffice")
     if missing:
         raise RenderError(f"Missing required render tool(s): {', '.join(missing)}")
+    soffice_bin = binary_path("soffice")
+    if soffice_bin is None:
+        raise RenderError("Unable to resolve soffice binary")
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="wordmark_lo_profile_") as profile_dir:
         profile_uri = Path(profile_dir).as_uri()
         cmd = [
-            "soffice",
+            soffice_bin,
             f"-env:UserInstallation={profile_uri}",
             "--headless",
             "--nologo",

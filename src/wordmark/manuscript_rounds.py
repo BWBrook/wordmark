@@ -13,7 +13,7 @@ import shutil
 import subprocess
 from typing import Any, Sequence
 
-from wordmark.external_tools import quarto_available
+from wordmark.external_tools import binary_path, quarto_available
 from wordmark.manuscript_models import RoundManifest, SCHEMA_VERSION
 from wordmark.sidecar import write_json
 
@@ -134,10 +134,11 @@ def prepare_round(
             raise ValueError("For .md sources, provide --build-cmd")
         if not quarto_available():
             raise RuntimeError("quarto CLI is required for the default .qmd build path")
+        quarto_bin = binary_path("quarto") or "quarto"
         for fmt in selected_formats:
             output_name = f"rendered.{fmt}"
             cmd = (
-                f"quarto render {shlex.quote(str(source))} --to {fmt} "
+                f"{shlex.quote(quarto_bin)} render {shlex.quote(str(source))} --to {fmt} "
                 f"--output {shlex.quote(output_name)} --output-dir {shlex.quote(str(round_dir))}"
             )
             run = _run_shell(cmd, cwd=source.parent)

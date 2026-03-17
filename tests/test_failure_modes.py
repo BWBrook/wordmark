@@ -69,6 +69,7 @@ def test_uno_failure_path_surfaces_error(monkeypatch: pytest.MonkeyPatch, sample
         return FakeProc()
 
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("WORDMARK_ENABLE_MACOS_UNO", "1")
 
     with pytest.raises(uno_engine.UnoEngineError, match="UNO fallback failed"):
         uno_engine.apply_patch(
