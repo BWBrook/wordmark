@@ -6,6 +6,7 @@ import pytest
 
 from wordmark import ooxml_engine
 from wordmark import uno_engine
+from wordmark.docx_package import DocxPackage
 
 
 def test_broken_anchor_raises(sample_docx: Path) -> None:
@@ -80,3 +81,25 @@ def test_uno_failure_path_surfaces_error(monkeypatch: pytest.MonkeyPatch, sample
             dry_run=False,
             fallback_reason="test",
         )
+
+
+def test_docx_package_save_preserves_target_when_zip_write_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.docx"
+    original = b"original payload"
+    target.write_bytes(original)
+    pkg = DocxPackage(parts={"word/document.xml": b"<root/>"})
+
+    class FailingZipFile:
+        def __init__(self, *_args, **_kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("zip write failed")
+
+    monkeypatch.setattr("wordmark.docx_package.zipfile.ZipFile", FailingZipFile)
+
+    with pytest.raises(RuntimeError, match="zip write failed"):
+        pkg.save(target)
+
+    assert target.read_bytes() == original
+    assert list(tmp_path.glob(".target.docx.*.tmp")) == []

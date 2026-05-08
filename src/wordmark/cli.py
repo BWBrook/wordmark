@@ -209,6 +209,25 @@ def _date_suffix(now: datetime | None = None) -> str:
     return current.strftime("%a%d%b%Y").lower()
 
 
+def _require_revision_filter(*, author: str | None, all_authors: bool) -> str | None:
+    if author and all_authors:
+        raise ValueError("Use either --author or --all, not both")
+    if not author and not all_authors:
+        raise ValueError("Review mutation requires explicit scope: provide --author or --all")
+    return None if all_authors else author
+
+
+def _artifact_path_safety(root: Path) -> list[str]:
+    reasons: list[str] = []
+    if "artifacts" not in root.parts:
+        reasons.append("path is not inside a directory named 'artifacts'")
+    if root.name in {".git", ".venv", "__pycache__"}:
+        reasons.append(f"path targets protected directory {root.name!r}")
+    if (root / ".git").exists():
+        reasons.append("path appears to be a repository root")
+    return reasons
+
+
 @contextmanager
 def _docx_operation_lock(docx_path: Path):
     lock_path = docx_path.with_suffix(docx_path.suffix + ".wordmark.lock")
@@ -602,7 +621,7 @@ def review_accept(
     """Accept tracked revisions by author or globally."""
     config = _load_app_config(config_path)
     resolved_actor = _resolve_author(actor, config)
-    filter_author = None if all_authors else author
+    filter_author = _require_revision_filter(author=author, all_authors=all_authors)
 
     with _docx_operation_lock(docx):
         result = ooxml_engine.review_action(
@@ -634,7 +653,7 @@ def review_reject(
     """Reject tracked revisions by author or globally."""
     config = _load_app_config(config_path)
     resolved_actor = _resolve_author(actor, config)
-    filter_author = None if all_authors else author
+    filter_author = _require_revision_filter(author=author, all_authors=all_authors)
 
     with _docx_operation_lock(docx):
         result = ooxml_engine.review_action(
@@ -703,6 +722,11 @@ def artifacts_clean(
     ),
     keep_transcripts: bool = typer.Option(False, "--keep-transcripts", help="Do not delete files under transcripts/."),
     apply: bool = typer.Option(False, "--apply", help="Delete matched files. Default is preview-only."),
+    force_outside_artifacts: bool = typer.Option(
+        False,
+        "--force-outside-artifacts",
+        help="Allow cleanup outside an artifacts/ directory after an explicit operator decision.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Preview or remove sidecar artifacts and transcripts."""
@@ -711,6 +735,19 @@ def artifacts_clean(
 
     if root.exists() and not root.is_dir():
         _echo({"error": "--path must point to a directory", "path": str(root)}, json_output=json_output)
+        raise typer.Exit(code=2)
+
+    unsafe_reasons = _artifact_path_safety(root)
+    if unsafe_reasons and not force_outside_artifacts:
+        _echo(
+            {
+                "error": "--path is outside Wordmark artifact cleanup scope",
+                "path": str(root),
+                "reasons": unsafe_reasons,
+                "hint": "Use an artifacts/ path, or pass --force-outside-artifacts after previewing carefully.",
+            },
+            json_output=json_output,
+        )
         raise typer.Exit(code=2)
 
     matches = _collect_artifact_files(
@@ -743,6 +780,8 @@ def artifacts_clean(
         "path": str(root),
         "exists": root.exists(),
         "apply": apply,
+        "force_outside_artifacts": force_outside_artifacts,
+        "safety_reasons": unsafe_reasons,
         "older_than_days": older_than_days,
         "keep_transcripts": keep_transcripts,
         "preserved_names": sorted(keep_names),
@@ -839,6 +878,11 @@ def manuscript_synthesize(
         "--export-critic",
         help="Export optional CriticMarkup review copy.",
     ),
+    allow_source_drift: bool = typer.Option(
+        False,
+        "--allow-source-drift",
+        help="Allow --apply-safe even when the current source hash differs from the prepare manifest.",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Create patch proposals and reports from collected feedback."""
@@ -847,6 +891,7 @@ def manuscript_synthesize(
         source=source,
         apply_safe=apply_safe,
         export_critic=export_critic,
+        allow_source_drift=allow_source_drift,
     )
     _echo(payload, json_output=json_output)
 

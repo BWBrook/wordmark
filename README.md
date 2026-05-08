@@ -202,6 +202,7 @@ uv run wordmark artifacts clean --older-than-days 7 --apply --json
 # Keep operations transcript while cleaning stale sidecars
 uv run wordmark artifacts clean --older-than-days 7 --keep-transcripts --apply --json
 ```
+`artifacts clean` refuses non-`artifacts/` paths unless `--force-outside-artifacts` is supplied after an explicit preview.
 
 ## Default config
 `wordmark.yaml` defines defaults such as:

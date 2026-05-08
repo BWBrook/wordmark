@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 from dataclasses import asdict
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -18,6 +19,49 @@ def _replace_once(text: str, find_text: str, replace_text: str) -> tuple[str, bo
     if idx < 0:
         return text, False
     return text[:idx] + replace_text + text[idx + len(find_text) :], True
+
+
+def _sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _source_drift_status(round_dir: Path, source: Path) -> dict[str, Any]:
+    manifest_path = round_dir / "manifest.json"
+    status: dict[str, Any] = {
+        "checked": False,
+        "drifted": False,
+        "manifest": str(manifest_path),
+        "expected_sha256": None,
+        "current_sha256": None,
+    }
+    if not manifest_path.exists():
+        status["reason"] = "manifest_missing"
+        return status
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected_hash = manifest.get("source_hash_sha256")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        status["reason"] = "source_hash_missing"
+        return status
+
+    current_hash = _sha256_file(source)
+    status.update(
+        {
+            "checked": True,
+            "expected_sha256": expected_hash,
+            "current_sha256": current_hash,
+            "drifted": current_hash != expected_hash,
+        }
+    )
+    manifest_source = manifest.get("source_path")
+    if isinstance(manifest_source, str) and manifest_source:
+        status["manifest_source_path"] = manifest_source
+        status["source_path_match"] = Path(manifest_source).resolve() == source
+    return status
 
 
 def _extract_replace_directive(text: str) -> tuple[str, str] | None:
@@ -190,6 +234,7 @@ def synthesize_feedback(
     source: Path,
     apply_safe: bool,
     export_critic: bool,
+    allow_source_drift: bool = False,
 ) -> dict[str, Any]:
     bundle_path = round_dir / "feedback.bundle.json"
     if not bundle_path.exists():
@@ -201,6 +246,13 @@ def synthesize_feedback(
         raise ValueError("feedback.bundle.json has invalid events payload")
 
     source = source.resolve()
+    source_drift = _source_drift_status(round_dir, source)
+    if apply_safe and source_drift.get("drifted") and not allow_source_drift:
+        raise ValueError(
+            "Source has changed since manuscript prepare; rerun prepare/collect or pass "
+            "--allow-source-drift after reviewing the current source."
+        )
+
     original_text = source.read_text(encoding="utf-8")
     source_lines = original_text.splitlines(keepends=True)
 
@@ -271,6 +323,8 @@ def synthesize_feedback(
         "schema_version": SCHEMA_VERSION,
         "source": str(source),
         "apply_safe": apply_safe,
+        "allow_source_drift": allow_source_drift,
+        "source_drift": source_drift,
         "proposals": [asdict(proposal) for proposal in proposals],
     }
     safe_edits_path = write_json(round_dir / "proposed.safe_edits.json", proposals_payload)
@@ -334,6 +388,8 @@ def synthesize_feedback(
             "source": str(source),
             "apply_safe": apply_safe,
             "export_critic": export_critic,
+            "allow_source_drift": allow_source_drift,
+            "source_drift": source_drift,
             "counts": {
                 "proposals_total": len(proposals),
                 "safe_or_applied": applied_count,
@@ -356,6 +412,8 @@ def synthesize_feedback(
         "source": str(source),
         "apply_safe": apply_safe,
         "export_critic": export_critic,
+        "allow_source_drift": allow_source_drift,
+        "source_drift": source_drift,
         "counts": {
             "proposals_total": len(proposals),
             "safe_or_applied": applied_count,

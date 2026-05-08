@@ -53,6 +53,29 @@ def test_add_comment_creates_comments_infrastructure(sample_docx: Path) -> None:
     assert "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" in override_types
 
 
+def test_add_comment_allocates_unused_relationship_id(sample_docx: Path) -> None:
+    pkg = DocxPackage.open(sample_docx)
+    rels_root = pkg.read_xml("word/_rels/document.xml.rels")
+    rels = list(rels_root)
+    occupied_fallback_id = f"rId{len(rels) + 1}"
+    rels[0].set("Id", occupied_fallback_id)
+    pkg.write_xml("word/_rels/document.xml.rels", rels_root)
+    pkg.save(sample_docx)
+
+    ooxml_engine.add_comment(
+        sample_docx,
+        selector="p:1",
+        text="Relationship allocation check.",
+        author="Reviewer A",
+        initials="RA",
+        dry_run=False,
+    )
+
+    updated = DocxPackage.open(sample_docx).read_xml("word/_rels/document.xml.rels")
+    rel_ids = [rel.get("Id") for rel in updated]
+    assert len(rel_ids) == len(set(rel_ids))
+
+
 def test_cli_inspect_writes_sidecars(sample_docx: Path) -> None:
     cfg_path = sample_docx.parent / "wordmark.test.yaml"
     cfg_payload = {

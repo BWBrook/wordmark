@@ -162,6 +162,8 @@ Accept/reject revisions:
 uv run wordmark review accept docs/input.docx --author "Barry Brook" --json
 uv run wordmark review reject docs/input.docx --all --json
 ```
+Review mutations require an explicit scope: use exactly one of `--author` or `--all`.
+
 Move revisions are handled explicitly:
 - accept: keep `move_to`, remove `move_from`
 - reject: remove `move_to`, keep `move_from`
@@ -212,6 +214,7 @@ Delete stale sidecars while retaining transcript history:
 ```bash
 uv run wordmark artifacts clean --older-than-days 14 --keep-transcripts --apply --json
 ```
+Cleanup is scoped to paths inside an `artifacts/` directory by default. For unusual scratch directories, preview first and then pass `--force-outside-artifacts` only when the matched file list is intentionally disposable.
 
 ## 7) Manuscript (Markdown/Quarto) collaboration rounds
 Use this flow when canonical writing is in `.md`/`.qmd`, but reviewers may work via PR comments, markdown notes, or DOCX review files.

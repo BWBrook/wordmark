@@ -22,7 +22,12 @@ class RenderOutput:
 
 
 def _run(cmd: list[str]) -> None:
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired as exc:
+        raise RenderError(
+            f"Command timed out: {' '.join(cmd)}\nSTDOUT:\n{exc.stdout or ''}\nSTDERR:\n{exc.stderr or ''}"
+        ) from exc
     if proc.returncode != 0:
         raise RenderError(f"Command failed: {' '.join(cmd)}\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}")
 
@@ -63,6 +68,8 @@ def convert_pdf_to_png(pdf_path: Path, out_prefix: Path) -> list[Path]:
     if missing:
         raise RenderError(f"Missing required render tool(s): {', '.join(missing)}")
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
+    for stale in out_prefix.parent.glob(f"{out_prefix.name}-*.png"):
+        stale.unlink()
     cmd = ["pdftoppm", "-png", str(pdf_path), str(out_prefix)]
     _run(cmd)
     png_paths = sorted(out_prefix.parent.glob(f"{out_prefix.name}-*.png"))

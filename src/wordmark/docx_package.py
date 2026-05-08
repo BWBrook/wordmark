@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
+import tempfile
 import zipfile
 
 from lxml import etree
@@ -52,6 +54,24 @@ class DocxPackage:
 
     def save(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            for part_name in sorted(self.parts.keys()):
-                zf.writestr(part_name, self.parts[part_name])
+        tmp_path: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=f".{path.name}.",
+                suffix=".tmp",
+                dir=path.parent,
+                delete=False,
+            ) as handle:
+                tmp_path = Path(handle.name)
+
+            with zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for part_name in sorted(self.parts.keys()):
+                    zf.writestr(part_name, self.parts[part_name])
+            os.replace(tmp_path, path)
+            tmp_path = None
+        finally:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass

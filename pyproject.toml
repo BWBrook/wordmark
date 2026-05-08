@@ -39,6 +39,7 @@ markers = [
 
 [tool.coverage.run]
 source = ["wordmark"]
+omit = ["src/wordmark/_resources/*"]
 
 [tool.coverage.report]
 skip_covered = true

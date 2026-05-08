@@ -7,6 +7,8 @@ an isolated uv environment even when `uno` is unavailable there.
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
+from importlib.resources import as_file, files
 import json
 import os
 from pathlib import Path
@@ -33,6 +35,24 @@ _REVISION_TYPE_BY_TAG = {
 
 class UnoEngineError(RuntimeError):
     """Raised when UNO fallback execution fails."""
+
+
+@contextmanager
+def _helper_script_path():
+    """Yield a filesystem path to the packaged UNO helper script."""
+    try:
+        resource = files("wordmark._resources").joinpath("uno_replace.py")
+        with as_file(resource) as helper_path:
+            if helper_path.exists():
+                yield helper_path
+                return
+    except (FileNotFoundError, ModuleNotFoundError):
+        pass
+
+    checkout_script = Path(__file__).resolve().parents[2] / "scripts" / "uno_replace.py"
+    if not checkout_script.exists():
+        raise UnoEngineError(f"UNO helper script missing: {checkout_script}")
+    yield checkout_script
 
 
 def _w(local: str) -> str:
@@ -140,10 +160,6 @@ def apply_patch(
     dry_run: bool,
     fallback_reason: str,
 ) -> OperationResult:
-    script_path = Path(__file__).resolve().parents[2] / "scripts" / "uno_replace.py"
-    if not script_path.exists():
-        raise UnoEngineError(f"UNO helper script missing: {script_path}")
-
     if platform.system() == "Darwin" and os.getenv("WORDMARK_ENABLE_MACOS_UNO") != "1":
         raise UnoEngineError(
             "UNO fallback is disabled by default on macOS. "
@@ -184,21 +200,30 @@ def apply_patch(
                     raise UnoEngineError("No python3 interpreter available for UNO fallback script")
                 python_bin = Path(resolved)
 
-        cmd = [
-            str(python_bin),
-            str(script_path),
-            "--docx",
-            str(path),
-            "--patch",
-            str(patch_path),
-            "--author",
-            author,
-            "--track-changes",
-            "on" if track_changes else "off",
-            "--output",
-            str(out_path),
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
+        with _helper_script_path() as script_path:
+            cmd = [
+                str(python_bin),
+                str(script_path),
+                "--docx",
+                str(path),
+                "--patch",
+                str(patch_path),
+                "--author",
+                author,
+                "--track-changes",
+                "on" if track_changes else "off",
+                "--output",
+                str(out_path),
+            ]
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+            except subprocess.TimeoutExpired as exc:
+                raise UnoEngineError(
+                    "UNO fallback timed out\n"
+                    f"Command: {' '.join(cmd)}\n"
+                    f"STDOUT:\n{exc.stdout or ''}\n"
+                    f"STDERR:\n{exc.stderr or ''}"
+                ) from exc
         if proc.returncode != 0:
             raise UnoEngineError(
                 "UNO fallback failed\n"

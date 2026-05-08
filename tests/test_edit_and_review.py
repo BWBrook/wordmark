@@ -125,6 +125,22 @@ def test_accept_and_reject_by_author(sample_docx: Path) -> None:
     assert review_after_reject["revisions"] == []
 
 
+def test_review_accept_requires_explicit_scope(sample_docx: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["review", "accept", str(sample_docx), "--json"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
+    assert "requires explicit scope" in str(result.exception)
+
+
+def test_review_reject_rejects_author_and_all_together(sample_docx: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(app, ["review", "reject", str(sample_docx), "--author", "Barry Brook", "--all", "--json"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, ValueError)
+    assert "either --author or --all" in str(result.exception)
+
+
 def test_mixed_content_doc_survives_comment_and_revision(sample_docx: Path) -> None:
     ooxml_engine.add_comment(
         sample_docx,

@@ -106,3 +106,40 @@ def test_artifacts_clean_apply_prunes_empty_directories(tmp_path: Path) -> None:
     assert "sample.render" in payload["deleted_dirs"]
     assert nested_file.exists() is False
     assert (artifacts_dir / ".gitkeep").exists()
+
+
+def test_artifacts_clean_refuses_repo_like_root_without_force(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    _write_file(repo_root / ".git" / "HEAD", "ref: refs/heads/main\n")
+    _write_file(repo_root / "keep.txt", "important")
+
+    runner = CliRunner()
+    result = runner.invoke(app, ["artifacts", "clean", "--path", str(repo_root), "--json"])
+
+    assert result.exit_code == 2
+    payload = json.loads(result.stdout)
+    assert payload["error"] == "--path is outside Wordmark artifact cleanup scope"
+    assert repo_root.joinpath("keep.txt").exists()
+
+
+def test_artifacts_clean_force_allows_non_artifact_preview(tmp_path: Path) -> None:
+    cleanup_root = tmp_path / "scratch"
+    _write_file(cleanup_root / "old.json", "{}")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "artifacts",
+            "clean",
+            "--path",
+            str(cleanup_root),
+            "--force-outside-artifacts",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["force_outside_artifacts"] is True
+    assert payload["matched_files"] == ["old.json"]

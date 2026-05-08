@@ -687,6 +687,67 @@ def test_manuscript_synthesize_apply_safe_updates_source(tmp_path: Path) -> None
     assert any(item["status"] == "applied" for item in safe["proposals"])
 
 
+def test_manuscript_synthesize_apply_safe_refuses_stale_source(tmp_path: Path) -> None:
+    _, source, round_dir = _prepare_round_with_docx(tmp_path, round_id="stale-source")
+
+    notes = tmp_path / "feedback.md"
+    notes.write_text("- replace 'Alpha example sentence.' with 'Alpha sample sentence.'\n", encoding="utf-8")
+    runner = CliRunner()
+    collect = runner.invoke(app, ["manuscript", "collect", str(round_dir), "--notes", str(notes), "--json"])
+    assert collect.exit_code == 0
+
+    source.write_text("# Title\n\nAlpha example sentence.\n\nNew author-side paragraph.\n", encoding="utf-8")
+
+    synth = runner.invoke(
+        app,
+        [
+            "manuscript",
+            "synthesize",
+            str(round_dir),
+            "--source",
+            str(source),
+            "--apply-safe",
+            "--json",
+        ],
+    )
+
+    assert synth.exit_code != 0
+    assert isinstance(synth.exception, ValueError)
+    assert "Source has changed since manuscript prepare" in str(synth.exception)
+    assert "Alpha sample sentence." not in source.read_text(encoding="utf-8")
+
+
+def test_manuscript_synthesize_apply_safe_can_override_source_drift(tmp_path: Path) -> None:
+    _, source, round_dir = _prepare_round_with_docx(tmp_path, round_id="source-drift-override")
+
+    notes = tmp_path / "feedback.md"
+    notes.write_text("- replace 'Alpha example sentence.' with 'Alpha sample sentence.'\n", encoding="utf-8")
+    runner = CliRunner()
+    collect = runner.invoke(app, ["manuscript", "collect", str(round_dir), "--notes", str(notes), "--json"])
+    assert collect.exit_code == 0
+
+    source.write_text("# Title\n\nAlpha example sentence.\n\nNew author-side paragraph.\n", encoding="utf-8")
+
+    synth = runner.invoke(
+        app,
+        [
+            "manuscript",
+            "synthesize",
+            str(round_dir),
+            "--source",
+            str(source),
+            "--apply-safe",
+            "--allow-source-drift",
+            "--json",
+        ],
+    )
+
+    assert synth.exit_code == 0
+    payload = json.loads(synth.stdout)
+    assert payload["source_drift"]["drifted"] is True
+    assert "Alpha sample sentence." in source.read_text(encoding="utf-8")
+
+
 def test_manuscript_status_tracks_stage_progression(tmp_path: Path) -> None:
     _, source, round_dir = _prepare_round_with_docx(tmp_path, round_id="status1")
     runner = CliRunner()

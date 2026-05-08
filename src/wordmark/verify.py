@@ -121,6 +121,17 @@ def _page_diff_ratio(before_png: Path, after_png: Path, *, diff_output: Path | N
         return float(sq) / float(max_possible)
 
 
+def _image_size(path: Path) -> tuple[int, int]:
+    with Image.open(path) as image:
+        return image.size
+
+
+def _clean_persisted_render_pages(persist_dir: Path) -> None:
+    for pattern in ("before-page-*.png", "after-page-*.png", "diff-page-*.png"):
+        for stale in persist_dir.glob(pattern):
+            stale.unlink()
+
+
 def _render_diff(
     before_docx: Path,
     after_docx: Path,
@@ -131,6 +142,7 @@ def _render_diff(
 ) -> dict[str, Any]:
     if persist_dir is not None:
         persist_dir.mkdir(parents=True, exist_ok=True)
+        _clean_persisted_render_pages(persist_dir)
 
     with tempfile.TemporaryDirectory(prefix="wordmark_verify_render_") as tmpdir:
         tmp = Path(tmpdir)
@@ -159,12 +171,18 @@ def _render_diff(
                 shutil.copy2(after_page, after_copy)
                 diff_page = persist_dir / f"diff-page-{idx + 1}.png"
 
+            before_size = _image_size(before_page)
+            after_size = _image_size(after_page)
+            dimensions_match = before_size == after_size
             ratio = _page_diff_ratio(before_page, after_page, diff_output=diff_page)
             diffs.append(
                 {
                     "page": idx + 1,
                     "ratio": ratio,
-                    "pass": ratio <= threshold,
+                    "pass": dimensions_match and ratio <= threshold,
+                    "dimensions_match": dimensions_match,
+                    "before_size": before_size,
+                    "after_size": after_size,
                     "before_page": str(before_copy) if before_copy else None,
                     "after_page": str(after_copy) if after_copy else None,
                     "diff_page": str(diff_page) if diff_page else None,

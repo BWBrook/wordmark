@@ -216,3 +216,9 @@
 - Context: On this macOS host, Homebrew cask installs for LibreOffice and Quarto did not consistently expose binaries on `PATH`, while LibreOffice's embedded Python wrapper hung on a simple non-interactive `import uno` probe.
 - Decision: Add macOS-aware binary discovery for `soffice` and `quarto`, keep render/verify and Quarto-backed manuscript workflows available on macOS, and leave UNO fallback disabled by default on macOS unless explicitly opt-in via `WORDMARK_ENABLE_MACOS_UNO=1`.
 - Consequences: macOS becomes a supported environment for the repo's pure lane plus render/Quarto integration without pretending UNO fallback is stable there yet; Linux behavior remains unchanged.
+
+## 2026-05-08 - ADR-034: Harden destructive and packaged review workflows after fresh audit
+- Status: accepted
+- Context: A fresh repository review found several sharp edges in otherwise working flows: packaged installs did not include the UNO helper script, artifact cleanup could be aimed at arbitrary trees, review accept/reject defaulted to all authors when scope was omitted, DOCX ZIP saves rewrote targets directly, manuscript safe-apply ignored prepare-time source hashes, and render verification could reuse stale page images or resize mismatched page dimensions.
+- Decision: Package the UNO helper under `wordmark._resources`, require explicit review mutation scope (`--author` or `--all`), restrict artifact cleanup to `artifacts/` paths unless explicitly forced, write DOCX packages via atomic sibling replacement, compare manuscript source hashes before `--apply-safe`, clean render page outputs before reuse, and treat page-dimension mismatches as verification failures.
+- Consequences: The CLI now fails closed for destructive or stale-source workflows, packaged installs retain the UNO fallback path, and render/verify outputs better reflect the current document pair rather than stale or resized artifacts.

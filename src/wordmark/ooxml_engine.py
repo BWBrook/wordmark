@@ -93,6 +93,19 @@ def _next_numeric_id(elements: list[etree._Element], attr_qname: str) -> int:
     return (max(values) + 1) if values else 0
 
 
+def _next_relationship_id(elements: list[etree._Element]) -> str:
+    existing = {str(el.get("Id")) for el in elements if el.get("Id") is not None}
+    numeric_suffixes: list[int] = []
+    for rid in existing:
+        if rid.startswith("rId") and rid[3:].isdigit():
+            numeric_suffixes.append(int(rid[3:]))
+
+    candidate = (max(numeric_suffixes) + 1) if numeric_suffixes else (len(existing) + 1)
+    while f"rId{candidate}" in existing:
+        candidate += 1
+    return f"rId{candidate}"
+
+
 def _body_paragraphs(document_root: etree._Element) -> list[etree._Element]:
     return document_root.xpath(".//w:body//w:p", namespaces=NSMAP)
 
@@ -181,10 +194,8 @@ def _ensure_comments_infrastructure(pkg: DocxPackage) -> etree._Element:
             existing_rel = rel
             break
     if existing_rel is None:
-        next_id = _next_numeric_id(rel_elems, "Id")
-        rid = f"rId{next_id if next_id > 0 else len(rel_elems) + 1}"
         rel_el = etree.Element(_p("Relationship"))
-        rel_el.set("Id", rid)
+        rel_el.set("Id", _next_relationship_id(rel_elems))
         rel_el.set("Type", COMMENTS_REL_TYPE)
         rel_el.set("Target", "comments.xml")
         rels_root.append(rel_el)
