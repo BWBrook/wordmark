@@ -583,6 +583,267 @@ def test_manuscript_synthesize_anchored_note_rewrites_only_targeted_line(tmp_pat
     assert "example two" in updated
 
 
+def test_manuscript_synthesize_anchored_suggestion_uses_target_span_for_repeated_lines(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nSame line.\nMiddle.\nSame line.\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "anchored-repeat"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "anchored-repeat",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:00:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 5, "line_end": 5},
+                        "content": {"summary": "Update second repeated line", "proposed_text": "Changed second line.\n"},
+                        "trace": {"source_ref": "pull_comment:1"},
+                    }
+                ],
+                "counts": {"total": 1},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    synth = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--apply-safe", "--json"],
+    )
+
+    assert synth.exit_code == 0
+    assert source.read_text(encoding="utf-8") == "# Title\n\nSame line.\nMiddle.\nChanged second line.\n"
+    safe = json.loads((round_dir / "proposed.safe_edits.json").read_text(encoding="utf-8"))
+    proposal = safe["proposals"][0]
+    assert proposal["status"] == "applied"
+    assert proposal["details"]["occurrences"] == 2
+    assert proposal["details"]["span_start"] > source.read_text(encoding="utf-8").index("Same line.")
+
+
+def test_manuscript_synthesize_preserves_distinct_identical_anchored_proposals(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nSame line.\nSame line.\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "anchored-repeat-two"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "anchored-repeat-two",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:00:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 3, "line_end": 3},
+                        "content": {"summary": "Update first repeated line", "proposed_text": "First changed.\n"},
+                        "trace": {"source_ref": "pull_comment:1"},
+                    },
+                    {
+                        "event_id": "evt-00002",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:01:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 4, "line_end": 4},
+                        "content": {"summary": "Update second repeated line", "proposed_text": "Second changed.\n"},
+                        "trace": {"source_ref": "pull_comment:2"},
+                    },
+                ],
+                "counts": {"total": 2},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    synth = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--apply-safe", "--json"],
+    )
+
+    assert synth.exit_code == 0
+    assert source.read_text(encoding="utf-8") == "# Title\n\nFirst changed.\nSecond changed.\n"
+    safe = json.loads((round_dir / "proposed.safe_edits.json").read_text(encoding="utf-8"))
+    assert len(safe["proposals"]) == 2
+    assert {item["status"] for item in safe["proposals"]} == {"applied"}
+
+
+def test_manuscript_synthesize_guards_markdown_structural_contexts(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    before = "---\ntitle: Old title\n---\n\nBody text.\n\n```r\nold <- 1\n```\n\nSee [old link](https://example.com) and [@old2024].\n"
+    source.write_text(before, encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "markdown-guards"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "markdown-guards",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:00:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 2, "line_end": 2},
+                        "content": {"summary": "Change title", "proposed_text": "title: New title\n"},
+                        "trace": {"source_ref": "pull_comment:1"},
+                    },
+                    {
+                        "event_id": "evt-00002",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:01:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 8, "line_end": 8},
+                        "content": {"summary": "Change code", "proposed_text": "new <- 2\n"},
+                        "trace": {"source_ref": "pull_comment:2"},
+                    },
+                    {
+                        "event_id": "evt-00003",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:02:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 11, "line_end": 11},
+                        "content": {"summary": "Change markdown inline syntax", "proposed_text": "See revised link and old2024.\n"},
+                        "trace": {"source_ref": "pull_comment:3"},
+                    },
+                ],
+                "counts": {"total": 3},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    synth = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--apply-safe", "--json"],
+    )
+
+    assert synth.exit_code == 0
+    assert source.read_text(encoding="utf-8") == before
+    payload = json.loads(synth.stdout)
+    assert payload["counts"]["guarded_markdown"] == 3
+    safe = json.loads((round_dir / "proposed.safe_edits.json").read_text(encoding="utf-8"))
+    assert {item["status"] for item in safe["proposals"]} == {"guarded_markdown"}
+    issues = {issue for item in safe["proposals"] for issue in item["details"]["markdown_guard_issues"]}
+    assert {"yaml_front_matter", "fenced_code_block", "link_or_image", "bracketed_citation"}.issubset(issues)
+
+
+def test_manuscript_critic_markup_is_span_based_and_escapes_nested_tokens(tmp_path: Path) -> None:
+    source = tmp_path / "chapter.md"
+    source.write_text("# Title\n\nSame line.\nMiddle.\nSame line.\n", encoding="utf-8")
+    round_dir = tmp_path / "rounds" / "critic-span"
+    round_dir.mkdir(parents=True, exist_ok=True)
+    (round_dir / "feedback.bundle.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "round_id": "critic-span",
+                "events": [
+                    {
+                        "event_id": "evt-00001",
+                        "channel": "github_pr",
+                        "kind": "suggestion",
+                        "severity": "medium",
+                        "author": "reviewer",
+                        "created_at": "2026-05-08T00:00:00Z",
+                        "anchor": {"file": "chapter.md", "line_start": 5, "line_end": 5},
+                        "content": {"summary": "Update second repeated line", "proposed_text": "Changed {-- second --} line.\n"},
+                        "trace": {"source_ref": "pull_comment:1"},
+                    }
+                ],
+                "counts": {"total": 1},
+                "ingestion_warnings": [],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    synth = runner.invoke(
+        app,
+        ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--export-critic", "--json"],
+    )
+
+    assert synth.exit_code == 0
+    critic_text = (round_dir / "source_review.critic.md").read_text(encoding="utf-8")
+    assert "prop-00001" in critic_text
+    assert critic_text.index("Middle.") < critic_text.index("{>> prop-00001 <<}{--Same line.")
+    assert r"Changed {\-- second --\} line." in critic_text
+
+
+def test_manuscript_decide_and_apply_accepted_safe_proposal(tmp_path: Path) -> None:
+    _, source, round_dir = _prepare_round_with_docx(tmp_path, round_id="decision-apply")
+
+    notes = tmp_path / "feedback.md"
+    notes.write_text("- replace 'Alpha example sentence.' with 'Alpha sample sentence.'\n", encoding="utf-8")
+    runner = CliRunner()
+    collect = runner.invoke(app, ["manuscript", "collect", str(round_dir), "--notes", str(notes), "--json"])
+    assert collect.exit_code == 0
+
+    synth = runner.invoke(app, ["manuscript", "synthesize", str(round_dir), "--source", str(source), "--json"])
+    assert synth.exit_code == 0
+    safe = json.loads((round_dir / "proposed.safe_edits.json").read_text(encoding="utf-8"))
+    proposal_id = safe["proposals"][0]["proposal_id"]
+    assert safe["proposals"][0]["status"] == "proposed_safe"
+
+    decide = runner.invoke(
+        app,
+        [
+            "manuscript",
+            "decide",
+            str(round_dir),
+            "--proposal-id",
+            proposal_id,
+            "--decision",
+            "accept",
+            "--note",
+            "Looks good.",
+            "--json",
+        ],
+    )
+    assert decide.exit_code == 0
+
+    apply = runner.invoke(
+        app,
+        ["manuscript", "apply-proposals", str(round_dir), "--source", str(source), "--accepted", "--json"],
+    )
+
+    assert apply.exit_code == 0
+    payload = json.loads(apply.stdout)
+    assert payload["applied_proposal_ids"] == [proposal_id]
+    assert "Alpha sample sentence." in source.read_text(encoding="utf-8")
+    log_text = (round_dir / "proposal.decisions.jsonl").read_text(encoding="utf-8")
+    assert '"decision": "accept"' in log_text
+    assert '"decision": "applied"' in log_text
+
+
 def test_manuscript_synthesize_skips_suggestion_for_different_source_file(tmp_path: Path) -> None:
     source = tmp_path / "chapter.md"
     source.write_text("# Title\n\nAlpha line.\n", encoding="utf-8")

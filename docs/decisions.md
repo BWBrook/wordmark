@@ -234,3 +234,9 @@
 - Context: GitHub Actions annotated hosted runs because `actions/checkout@v4`, `actions/setup-python@v5`, and `astral-sh/setup-uv@v5` run on Node.js 20, which GitHub has scheduled for deprecation on hosted runners.
 - Decision: Update the hosted workflows to `actions/checkout@v6`, `actions/setup-python@v6`, and `astral-sh/setup-uv@v8.1.0` after confirming their action metadata declares `using: node24`; also pin the Quarto composite setup action to its current `v2.2.0` tag.
 - Consequences: The default CI and external-tools workflow definitions are ready for GitHub's Node 24 runner transition while preserving the existing lint, pure-test, and external-tool job structure.
+
+## 2026-05-08 - ADR-037: Treat Markdown manuscript edits as verified-span proposals with guardrails
+- Status: accepted
+- Context: A review of the nascent Markdown tracked-change equivalent found that anchored safe edits could still be applied to the wrong repeated line because anchors were reduced to text and replaced by first global match. The workflow also lacked proposal decisions, span-aware CriticMarkup, and Markdown-context guardrails.
+- Decision: Resolve each manuscript proposal to a verified source span before marking it safe, apply non-overlapping spans from the original source snapshot, guard structural Markdown contexts from automatic application, annotate CriticMarkup with proposal ids, and add append-only accept/reject/defer decision logging plus selected proposal application.
+- Consequences: Markdown manuscript collaboration remains conservative and auditable: repeated anchored text can be changed at the intended source span, structural Markdown edits are surfaced for manual review, and operators can accept/apply only selected safe proposals.

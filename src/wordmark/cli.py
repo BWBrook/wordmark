@@ -901,6 +901,48 @@ def manuscript_synthesize(
     _echo(payload, json_output=json_output)
 
 
+@manuscript_app.command("decide")
+def manuscript_decide(
+    round_dir: Path = typer.Argument(..., exists=True, readable=True, writable=True, resolve_path=True),
+    proposal_id: str = typer.Option(..., "--proposal-id", help="Proposal id from proposed.safe_edits.json."),
+    decision: str = typer.Option(..., "--decision", help="Proposal decision: accept, reject, or defer."),
+    note: str | None = typer.Option(None, "--note", help="Optional decision note."),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Record an accept/reject/defer decision for a manuscript proposal."""
+    payload = manuscript_synthesis.record_proposal_decision(
+        round_dir,
+        proposal_id=proposal_id,
+        decision=decision,
+        note=note,
+    )
+    _echo(payload, json_output=json_output)
+
+
+@manuscript_app.command("apply-proposals")
+def manuscript_apply_proposals(
+    round_dir: Path = typer.Argument(..., exists=True, readable=True, writable=True, resolve_path=True),
+    source: Path = typer.Option(..., "--source", exists=True, readable=True, writable=True, resolve_path=True, help="Source .md/.qmd file."),
+    proposal_id: list[str] | None = typer.Option(None, "--proposal-id", help="Proposal id to apply; repeat for multiple."),
+    accepted: bool = typer.Option(False, "--accepted", help="Apply proposals whose latest decision is accept."),
+    allow_source_drift: bool = typer.Option(
+        False,
+        "--allow-source-drift",
+        help="Allow application even when the current source hash differs from the prepare manifest.",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
+) -> None:
+    """Apply selected safe manuscript proposals by id or accepted decision."""
+    payload = manuscript_synthesis.apply_selected_proposals(
+        round_dir,
+        source=source,
+        proposal_ids=proposal_id or [],
+        accepted=accepted,
+        allow_source_drift=allow_source_drift,
+    )
+    _echo(payload, json_output=json_output)
+
+
 @manuscript_app.command("status")
 def manuscript_status(
     round_dir: Path = typer.Argument(..., exists=True, readable=True, resolve_path=True),

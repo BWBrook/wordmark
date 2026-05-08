@@ -106,9 +106,11 @@ Wordmark uses a hybrid model for manuscript collaboration:
 - feedback is normalized into structured sidecars and synthesized into safe patch proposals
 
 Current guarantees:
-- `manuscript synthesize --apply-safe` applies deterministic source-aware edits when line anchors are available, otherwise falls back to deterministic exact-match edits
+- `manuscript synthesize --apply-safe` applies deterministic source-aware edits only after resolving each proposal to a verified source span
 - repeated matches without reliable source anchors are reported as ambiguous, not auto-applied
 - excerpt-based duplicate matches without reliable source anchors are reported as ambiguous, not auto-applied
+- edits touching YAML front matter, fenced code, inline code, links, or citations are guarded for manual review rather than auto-applied
+- proposal decisions can be recorded with `manuscript decide`, then applied selectively with `manuscript apply-proposals`
 - imported DOCX comments/revisions are treated as review events, not as a lossless source backport
 - malformed round inputs fail fast rather than being silently repaired
 
@@ -134,6 +136,16 @@ uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
 uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
   --source chapter.qmd \
   --apply-safe \
+  --json
+
+# Optional: accept/reject/defer and apply selected safe proposals
+uv run wordmark manuscript decide artifacts/manuscript_rounds/<round_id> \
+  --proposal-id prop-00001 \
+  --decision accept \
+  --json
+uv run wordmark manuscript apply-proposals artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --accepted \
   --json
 ```
 

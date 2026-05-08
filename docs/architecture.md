@@ -105,6 +105,9 @@ Manuscript round artifacts (default under `artifacts/manuscript_rounds/<round_id
 - `review_summary.md`
 - `synthesize.report.json`
 - optional `source_review.critic.md`
+- optional `proposal.decisions.jsonl`
+- optional `proposal.decisions.summary.json`
+- optional `proposal.apply.report.json`
 
 ## Configuration
 `wordmark.yaml` controls:
@@ -124,7 +127,7 @@ Manuscript round artifacts (default under `artifacts/manuscript_rounds/<round_id
 - UNO matching still relies on LibreOffice literal search behavior; phrase-level, context-aware patches remain preferred over long full-paragraph literals.
 - `review-edit` is for iterative supervision passes, not final release sign-off where strict layout invariance is required.
 - `raw` text mode is intentionally lossy for reviewer readability in tracked documents; use it for diagnostics, not human handoff summaries.
-- Automatic DOCX tracked-change backport to `.md/.qmd` is intentionally out-of-scope in phase 7; only deterministic text-safe proposals can be auto-applied.
+- Automatic DOCX tracked-change backport to `.md/.qmd` is intentionally out-of-scope; only verified-span proposals that pass Markdown guards can be auto-applied.
 - The first DOCX-core decomposition slice was limited to review transforms; the second slice now moves anchor resolution into `ooxml_anchor.py`.
 - Localized replacement and rewrite logic now live in `ooxml_replace.py`, but remain the most fidelity-sensitive OOXML subsystem and should still be changed only behind characterization tests.
 

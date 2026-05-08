@@ -18,9 +18,11 @@ Design intent:
 - Consolidated record: `feedback.bundle.json`.
 
 Current conservative guarantees:
-- `--apply-safe` applies deterministic source-aware edits when line/file anchors are available, otherwise deterministic exact-match edits.
+- `--apply-safe` applies deterministic source-aware edits only after each proposal resolves to a verified source span.
 - Repeated matches without reliable source anchors become `ambiguous`; they are reported, not auto-applied.
 - Excerpt-based duplicate matches without reliable source anchors also remain `ambiguous`; they are not auto-applied.
+- Edits touching YAML front matter, fenced code, inline code, links, or citations become `guarded_markdown`; they are reported for manual review rather than auto-applied.
+- Proposal decisions can be logged as accept/reject/defer and applied later by proposal id or by latest accepted decision.
 - Reviewed DOCX comments/revisions are imported as feedback events and summaries, not as a lossless tracked-change backport to source.
 - Missing or malformed round artifacts fail fast so the operator sees the problem immediately.
 
@@ -77,9 +79,30 @@ uv run wordmark manuscript synthesize artifacts/manuscript_rounds/<round_id> \
 ```
 
 Only deterministic, uniquely matched edits are applied.
-Ambiguous or unresolved items remain in `open_issues.md`.
+Ambiguous, Markdown-guarded, conflicting, or unresolved items remain in `open_issues.md`.
 
-### 5) Check round completeness
+### 5) Record proposal decisions and apply selected safe edits
+```bash
+uv run wordmark manuscript decide artifacts/manuscript_rounds/<round_id> \
+  --proposal-id prop-00001 \
+  --decision accept \
+  --note "Clear typo fix." \
+  --json
+
+uv run wordmark manuscript apply-proposals artifacts/manuscript_rounds/<round_id> \
+  --source chapter.qmd \
+  --accepted \
+  --json
+```
+
+Decision/apply outputs:
+- `proposal.decisions.jsonl`: append-only decision/application log.
+- `proposal.decisions.summary.json`: latest decision per proposal.
+- `proposal.apply.report.json`: selected proposal application report.
+
+`apply-proposals` can also take repeated `--proposal-id` values for explicit selected application.
+
+### 6) Check round completeness
 ```bash
 uv run wordmark manuscript status artifacts/manuscript_rounds/<round_id> --json
 ```
@@ -98,6 +121,7 @@ uv run wordmark manuscript status artifacts/manuscript_rounds/<round_id> --json
 4. Keep conceptual/structural guidance as comments, not forced line rewrites.
 5. For Word-oriented collaborators, use reviewed DOCX files for comments/revisions, then ingest via `manuscript collect`.
 6. Treat CriticMarkup export as optional reviewer UX, not canonical source.
+7. Expect Markdown structural edits to require human review when they touch front matter, code, links, or citations.
 
 ## Safety boundaries
 1. Do not overwrite source unintentionally:
