@@ -228,3 +228,9 @@
 - Context: The review follow-up left lower-severity robustness work: malformed patch/anchor JSON surfaced through ad hoc downstream exceptions, remaining `gh`/Git/build subprocesses could hang indefinitely, and render/verify hardening needed pure-lane characterization rather than only external-tool coverage.
 - Decision: Add a small CLI validation module for patch and anchor payloads, reject invalid patch/anchor shapes before mutation, set explicit timeouts on remaining GitHub/Git/manuscript build subprocess calls, and add pure-Python render/verify regression tests that use monkeypatched render outputs.
 - Consequences: Operators get earlier and more consistent failures for malformed inputs, automation cannot stall indefinitely on the remaining subprocess surfaces, and the required pure lane now covers the render/verify edge cases introduced during hardening.
+
+## 2026-05-08 - ADR-036: Move hosted workflow setup actions to Node 24-compatible releases
+- Status: accepted
+- Context: GitHub Actions annotated hosted runs because `actions/checkout@v4`, `actions/setup-python@v5`, and `astral-sh/setup-uv@v5` run on Node.js 20, which GitHub has scheduled for deprecation on hosted runners.
+- Decision: Update the hosted workflows to `actions/checkout@v6`, `actions/setup-python@v6`, and `astral-sh/setup-uv@v8.1.0` after confirming their action metadata declares `using: node24`; also pin the Quarto composite setup action to its current `v2.2.0` tag.
+- Consequences: The default CI and external-tools workflow definitions are ready for GitHub's Node 24 runner transition while preserving the existing lint, pure-test, and external-tool job structure.
