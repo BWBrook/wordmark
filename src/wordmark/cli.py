@@ -42,6 +42,12 @@ from wordmark.uno_precision import (
     prepare_uno_precision_patch as _prepare_uno_precision_patch,
     should_retry_uno_low_hit as _should_retry_uno_low_hit,
 )
+from wordmark.validation import (
+    parse_json_object,
+    validate_anchor_payload,
+    validate_anchor_selector,
+    validate_patch_payload,
+)
 
 app = typer.Typer(help="CLI-first DOCX and manuscript review tooling", no_args_is_help=True)
 comment_app = typer.Typer(help="Comment operations")
@@ -293,15 +299,14 @@ def comment_add(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON output."),
 ) -> None:
     """Add a DOCX comment anchored to a paragraph or text snippet."""
-    if not anchor and not anchor_json:
-        raise ValueError("Provide either --anchor or --anchor-json")
+    if bool(anchor) == bool(anchor_json):
+        raise ValueError("Provide exactly one of --anchor or --anchor-json")
 
     anchor_payload: dict[str, Any] | None = None
     if anchor_json:
-        parsed = json.loads(anchor_json)
-        if not isinstance(parsed, dict):
-            raise ValueError("--anchor-json must be a JSON object")
-        anchor_payload = parsed
+        anchor_payload = validate_anchor_payload(parse_json_object(anchor_json, label="--anchor-json"))
+    if anchor:
+        anchor = validate_anchor_selector(anchor)
 
     config = _load_app_config(config_path)
     resolved_author = _resolve_author(author, config)
@@ -371,7 +376,7 @@ def edit_apply(
         drift_warning_threshold,
         {"low", "moderate", "high"},
     )
-    patch_data = json.loads(patch.read_text(encoding="utf-8"))
+    patch_data = validate_patch_payload(parse_json_object(patch.read_text(encoding="utf-8"), label="--patch"))
     policy = _resolve_edit_policy(
         config,
         fidelity_mode=fidelity_mode,

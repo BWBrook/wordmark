@@ -87,12 +87,16 @@ def gh_available() -> bool:
 def gh_auth_available(*, cwd: Path | None = None) -> bool:
     if not gh_available():
         return False
-    proc = subprocess.run(
-        ["gh", "auth", "status", "-h", "github.com"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["gh", "auth", "status", "-h", "github.com"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return False
     return proc.returncode == 0
 
 

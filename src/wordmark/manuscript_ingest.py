@@ -17,6 +17,9 @@ from wordmark.manuscript_rounds import load_manifest
 from wordmark.sidecar import write_json, write_text
 from wordmark import ooxml_engine
 
+GH_TIMEOUT_S = 60
+GIT_TIMEOUT_S = 15
+
 
 def _now_utc() -> str:
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -101,12 +104,16 @@ def _parse_pr_number(value: str) -> int:
 
 
 def _origin_repo_slug(cwd: Path) -> str | None:
-    proc = subprocess.run(
-        ["git", "config", "--get", "remote.origin.url"],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        proc = subprocess.run(
+            ["git", "config", "--get", "remote.origin.url"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if proc.returncode != 0:
         return None
     origin = proc.stdout.strip()
@@ -122,7 +129,10 @@ def _origin_repo_slug(cwd: Path) -> str | None:
 
 
 def _gh_json(args: list[str], *, cwd: Path) -> tuple[Any, str | None]:
-    proc = subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(["gh", *args], cwd=cwd, capture_output=True, text=True, timeout=GH_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return None, f"gh command timed out after {GH_TIMEOUT_S}s"
     if proc.returncode != 0:
         return None, proc.stderr.strip() or proc.stdout.strip() or "gh command failed"
     try:

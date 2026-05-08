@@ -17,6 +17,9 @@ from wordmark.external_tools import binary_path, quarto_available
 from wordmark.manuscript_models import RoundManifest, SCHEMA_VERSION
 from wordmark.sidecar import write_json
 
+DEFAULT_BUILD_TIMEOUT_S = 600
+DEFAULT_GIT_TIMEOUT_S = 15
+
 
 def _now_utc() -> str:
     return datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -60,24 +63,47 @@ def _parse_formats(formats: Sequence[str] | str) -> list[str]:
     return deduped
 
 
-def _run_shell(command: str, *, cwd: Path) -> dict[str, Any]:
-    proc = subprocess.run(
-        ["bash", "-lc", command],
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-    )
+def _run_shell(command: str, *, cwd: Path, timeout_s: int = DEFAULT_BUILD_TIMEOUT_S) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            ["bash", "-lc", command],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "command": command,
+            "cwd": str(cwd),
+            "exit_code": 124,
+            "stdout": exc.stdout or "",
+            "stderr": f"Build command timed out after {timeout_s}s\n{exc.stderr or ''}",
+            "timed_out": True,
+            "timeout_s": timeout_s,
+        }
     return {
         "command": command,
         "cwd": str(cwd),
         "exit_code": proc.returncode,
         "stdout": proc.stdout,
         "stderr": proc.stderr,
+        "timed_out": False,
+        "timeout_s": timeout_s,
     }
 
 
 def _git_value(args: list[str], *, cwd: Path) -> str | None:
-    proc = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_GIT_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return None
     if proc.returncode != 0:
         return None
     value = proc.stdout.strip()
