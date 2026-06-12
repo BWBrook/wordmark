@@ -1,7 +1,7 @@
 .PHONY: sync test test-pure test-pure-cov test-external lint check
 
 sync:
-	uv sync --extra dev
+	uv sync --extra dev --python 3.14
 
 test:
 	uv run pytest

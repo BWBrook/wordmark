@@ -1,6 +1,6 @@
 # wordmark
 
-Wordmark is a CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts, with Linux-first origins and growing macOS support.
+Wordmark is a CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts, with Linux/WSL origins and active macOS support.
 
 ## Goals
 - Open and inspect `.docx` review state (comments and revisions)
@@ -13,7 +13,7 @@ Wordmark is a CLI-first toolkit for review workflows across `.docx` and Markdown
 ## Quickstart
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --python 3.14
 uv run wordmark --help
 uv run pytest
 make test-pure
@@ -26,7 +26,7 @@ make lint
 Wordmark's pure-Python lane works on macOS with:
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev --python 3.14
 make test-pure
 make lint
 ```
@@ -50,7 +50,7 @@ Notes:
 
 ## Environment contract
 Core Python runtime:
-- Python `>=3.11`
+- Python `>=3.14`
 - `uv` for environment management
 
 Host-installed tools used by optional workflows:
@@ -75,7 +75,7 @@ make lint
 ```
 
 Hosted CI lanes:
-- `ci`: required/default GitHub Actions lane running `make lint` and `make test-pure`
+- `ci`: required/default GitHub Actions lane running `make lint` and `make test-pure-cov` on Python 3.14
 - `external-tools`: separate hosted integration lane running `make test-external` on Ubuntu with LibreOffice/UNO/rendering tools installed plus a real Quarto-backed `.qmd` smoke build
 
 ## CLI commands

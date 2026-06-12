@@ -1,7 +1,7 @@
 # Wordmark Architecture (Phase 11)
 
 ## Objective
-Provide a Linux-first, CLI-first workflow for:
+Provide a cross-platform, CLI-first workflow for:
 - editing `.docx` review state (comments + tracked changes) with controlled formatting risk, and
 - running hybrid Markdown/Quarto collaboration rounds that keep `.md/.qmd` as canonical source while aggregating review feedback into auditable artifacts.
 

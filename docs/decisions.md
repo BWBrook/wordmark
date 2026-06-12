@@ -240,3 +240,9 @@
 - Context: A review of the nascent Markdown tracked-change equivalent found that anchored safe edits could still be applied to the wrong repeated line because anchors were reduced to text and replaced by first global match. The workflow also lacked proposal decisions, span-aware CriticMarkup, and Markdown-context guardrails.
 - Decision: Resolve each manuscript proposal to a verified source span before marking it safe, apply non-overlapping spans from the original source snapshot, guard structural Markdown contexts from automatic application, annotate CriticMarkup with proposal ids, and add append-only accept/reject/defer decision logging plus selected proposal application.
 - Consequences: Markdown manuscript collaboration remains conservative and auditable: repeated anchored text can be changed at the intended source span, structural Markdown edits are surfaced for manual review, and operators can accept/apply only selected safe proposals.
+
+## 2026-05-29 - ADR-038: Use Python 3.14 as the active macOS development baseline
+- Status: accepted
+- Context: The project has moved from its original WSL/Linux setup onto Barry's Mac mini dev box, where Homebrew and uv-managed Python 3.14 are available and the previous 3.11/3.12 CI matrix no longer reflects the intended local R&D baseline.
+- Decision: Raise the package requirement and lint target to Python 3.14, add a repo-local `.python-version`, update hosted CI to Python 3.14, and keep uv as the environment manager for all local checks.
+- Consequences: The Mac mini development environment, local Makefile sync target, and hosted checks now agree on Python 3.14. Older Python compatibility is intentionally de-scoped until there is a concrete downstream need.

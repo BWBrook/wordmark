@@ -1,7 +1,7 @@
 # Fidelity Policy (Phase 5)
 
 ## Scope
-This policy defines acceptance gates for Linux-native `.docx` review edits.
+This policy defines acceptance gates for CLI-native `.docx` review edits.
 
 ## Profile: `business-docs` (strict)
 Target corpus includes:

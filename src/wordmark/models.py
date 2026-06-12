@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -62,6 +62,6 @@ class OperationResult:
             engine=engine,
             changed=changed,
             author=author,
-            timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            timestamp=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             details=details or {},
         )
