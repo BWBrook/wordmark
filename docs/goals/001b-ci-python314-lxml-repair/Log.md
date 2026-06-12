@@ -177,3 +177,59 @@ make test-external
 
 `make test-external` was run even though workflow files were unchanged because
 the repair updates a core dependency used by document/XML flows.
+
+## 2026-06-12 21:54 AEST - Phase 4 Hosted CI Passed
+
+Staged exact approved paths only for the repair commit:
+
+```text
+docs/goals/001b-ci-python314-lxml-repair/Goal.md
+docs/goals/001b-ci-python314-lxml-repair/Log.md
+docs/goals/001b-ci-python314-lxml-repair/Plan.md
+docs/goals/001b-ci-python314-lxml-repair/Runbook.md
+docs/log/2026-06-12_ci_python314_lxml_repair.md
+pyproject.toml
+uv.lock
+```
+
+Confirmed `.DS_Store` remained untracked and unstaged.
+
+Repair commit:
+
+```text
+918b763 ci: repair Python 3.14 lxml sync
+```
+
+Push result:
+
+```text
+To github.com:BWBrook/wordmark.git
+   e9802fb..918b763  main -> main
+```
+
+Hosted CI for the repair commit:
+
+```text
+run = 27414004054
+url = https://github.com/BWBrook/wordmark/actions/runs/27414004054
+headSha = 918b7635a22abb5d8cfe3d75b97c73e0b3cc3b2b
+status = completed
+conclusion = success
+jobs = lint success; pure-python (py3.14) success
+previous failing step = Sync dependencies
+current result = Sync dependencies success in both jobs
+```
+
+Runner annotation noted a non-fatal cache-save reservation warning in the
+pure-python job; the workflow conclusion remained `success`.
+
+Status after hosted CI verification:
+
+```text
+## main...origin/main
+?? .DS_Store
+```
+
+This final goal-log/plan bookkeeping update is docs-only. The orchestrator
+wake-up will be sent after this bookkeeping update is pushed and the final
+hosted `ci` run is inspected.

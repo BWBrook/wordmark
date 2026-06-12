@@ -34,16 +34,16 @@
 
 ## Phase 4 - Commit, Push, And Watch CI
 
-- [ ] Stage exact approved paths only.
-- [ ] Confirm `.DS_Store` is untracked and unstaged.
-- [ ] Commit the CI repair.
-- [ ] Push to `origin main`.
-- [ ] Inspect the new GitHub Actions `ci` run for the pushed SHA.
-- [ ] If CI fails, fetch the failing log and update `Log.md` before deciding
+- [x] Stage exact approved paths only.
+- [x] Confirm `.DS_Store` is untracked and unstaged.
+- [x] Commit the CI repair.
+- [x] Push to `origin main`.
+- [x] Inspect the new GitHub Actions `ci` run for the pushed SHA.
+- [x] If CI fails, fetch the failing log and update `Log.md` before deciding
   whether to fix in scope or wake the orchestrator.
 
 ## Phase 5 - Wake Orchestrator
 
-- [ ] Record final status and GitHub Actions result in `Log.md`.
-- [ ] Send the Wordmark orchestrator a concise wake-up with the repair,
+- [x] Record final status and GitHub Actions result in `Log.md`.
+- [x] Send the Wordmark orchestrator a concise wake-up with the repair,
   validation, CI URL/status, final git state, and residual risk.
