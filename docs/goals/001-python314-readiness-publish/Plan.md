@@ -28,17 +28,17 @@
 
 ## Phase 4 - Commit And Push
 
-- [ ] Confirm `git diff --check` passes.
-- [ ] Stage exact approved paths only.
-- [ ] Confirm `.DS_Store` is not staged.
-- [ ] Commit with `chore: publish macOS Python 3.14 readiness` unless a better
+- [x] Confirm `git diff --check` passes.
+- [x] Stage exact approved paths only.
+- [x] Confirm `.DS_Store` is not staged.
+- [x] Commit with `chore: publish macOS Python 3.14 readiness` unless a better
   readiness-specific message is clearly warranted.
-- [ ] Push with `git push origin main`.
-- [ ] Record commit SHA and push result in `Log.md`.
+- [x] Push with `git push origin main`.
+- [x] Record commit SHA and push result in `Log.md`.
 
 ## Phase 5 - Wake Orchestrator
 
-- [ ] Capture final `git status --short --branch`.
-- [ ] Confirm any remaining untracked state is expected.
-- [ ] Send the Wordmark orchestrator a compact wake-up report with validation,
+- [x] Capture final `git status --short --branch`.
+- [x] Confirm any remaining untracked state is expected.
+- [x] Send the Wordmark orchestrator a compact wake-up report with validation,
   commit, push, final status, and residual risks.

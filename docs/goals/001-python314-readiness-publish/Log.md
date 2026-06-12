@@ -164,3 +164,54 @@ artifacts/test_doc.*
 artifacts/test_doc.render/
 artifacts/transcripts/operations.jsonl
 ```
+
+## 2026-06-12 20:00 AEST - Phase 4 Publication Push Complete
+
+Before staging, `git diff --check` passed. Staged exact approved paths only,
+including the new publication note:
+
+```text
+.github/workflows/ci.yml
+.github/workflows/external-tools.yml
+.python-version
+Makefile
+README.md
+docs/architecture.md
+docs/decisions.md
+docs/fidelity-policy.md
+docs/goals/001-python314-readiness-publish/Goal.md
+docs/goals/001-python314-readiness-publish/Log.md
+docs/goals/001-python314-readiness-publish/Plan.md
+docs/goals/001-python314-readiness-publish/Runbook.md
+docs/log/2026-05-29_macos_python314_readiness_sweep.md
+docs/log/2026-06-12_python314_readiness_publication.md
+pyproject.toml
+src/wordmark/models.py
+uv.lock
+```
+
+Confirmed `.DS_Store` remained untracked and unstaged.
+
+Publication commit:
+
+```text
+a00d2bc chore: publish macOS Python 3.14 readiness
+```
+
+Push result:
+
+```text
+To github.com:BWBrook/wordmark.git
+   db52e96..a00d2bc  main -> main
+```
+
+Status after the publication push:
+
+```text
+## main...origin/main
+?? .DS_Store
+```
+
+This final goal-log/plan bookkeeping update is docs-only and records the
+successful publication result without changing code, config, lockfile, or
+validation-surface files.
