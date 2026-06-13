@@ -27,6 +27,6 @@
 - [x] Run local validation.
 - [x] Stage exact approved files only.
 - [x] Confirm `.DS_Store` is untracked and unstaged.
-- [ ] Commit and push.
-- [ ] Inspect hosted `ci` for the pushed SHA.
-- [ ] Wake the orchestrator with evidence and recommended next goal shape.
+- [x] Commit and push.
+- [x] Inspect hosted `ci` for the pushed SHA.
+- [x] Wake the orchestrator with evidence and recommended next goal shape.

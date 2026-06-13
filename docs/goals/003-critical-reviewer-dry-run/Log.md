@@ -196,3 +196,61 @@ uv run wordmark verify examples/canonical/reviewer_dry_run_synthetic_goal003.doc
 `make test-external` was not run because no external-tool, render, Quarto, DOCX
 engine, OOXML/UNO logic, dependency, or CI workflow behaviour changed. The
 `review-edit` verify command performed its own render-diff gate and passed.
+
+## 2026-06-13 17:40 AEST - Phase B Published And Hosted CI Passed
+
+Staged exact approved paths only for the dry-run commit:
+
+```text
+docs/goals/003-critical-reviewer-dry-run/Goal.md
+docs/goals/003-critical-reviewer-dry-run/Log.md
+docs/goals/003-critical-reviewer-dry-run/Plan.md
+docs/goals/003-critical-reviewer-dry-run/Runbook.md
+docs/log/2026-06-13_critical_reviewer_dry_run.md
+examples/canonical/reviewer_dry_run_synthetic_goal003.docx
+examples/edited/reviewer_dry_run_synthetic_goal003_edited_sat13jun2026.docx
+examples/reviewer_calibration/synthetic_manuscript_goal003.md
+```
+
+Confirmed `.DS_Store` remained untracked and unstaged.
+
+Dry-run commit:
+
+```text
+4da6c79 docs: run critical reviewer dry run
+```
+
+Push result:
+
+```text
+To github.com:BWBrook/wordmark.git
+   3c985eb..4da6c79  main -> main
+```
+
+Hosted CI for the dry-run commit:
+
+```text
+run = 27460612259
+url = https://github.com/BWBrook/wordmark/actions/runs/27460612259
+headSha = 4da6c79194027d9adfdc11058c50d6c7b07764fb
+status = completed
+conclusion = success
+jobs = lint success; pure-python (py3.14) success
+```
+
+Status after hosted CI verification:
+
+```text
+## main...origin/main
+?? .DS_Store
+```
+
+Residual risks: the dry run validates a single synthetic document and does not
+constitute an LLM evaluation harness. The one observed tool nuance is that a
+second-pass edit inside already tracked text preflighted to UNO rather than
+safe localized OOXML. The main review pass still achieved the intended
+line-edit-first behaviour without guidance changes or engine changes.
+
+This final goal-log/plan bookkeeping update is docs-only. The orchestrator
+wake-up will be sent after this bookkeeping update is pushed and the final
+hosted `ci` run is inspected.
