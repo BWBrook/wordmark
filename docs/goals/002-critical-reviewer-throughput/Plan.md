@@ -41,15 +41,15 @@
 
 - [x] Stage exact approved paths only.
 - [x] Confirm `.DS_Store` is untracked and unstaged.
-- [ ] Commit the guidance/calibration work.
-- [ ] Push to `origin main`.
-- [ ] Inspect the GitHub Actions `ci` run for the pushed SHA.
-- [ ] If CI fails, fetch the failing log and update `Log.md` before deciding
+- [x] Commit the guidance/calibration work.
+- [x] Push to `origin main`.
+- [x] Inspect the GitHub Actions `ci` run for the pushed SHA.
+- [x] If CI fails, fetch the failing log and update `Log.md` before deciding
   whether to fix in scope or wake the orchestrator.
 
 ## Phase 6 - Wake Orchestrator
 
-- [ ] Record final status and GitHub Actions result in `Log.md`.
-- [ ] Send the Wordmark orchestrator a concise wake-up with the guidance
+- [x] Record final status and GitHub Actions result in `Log.md`.
+- [x] Send the Wordmark orchestrator a concise wake-up with the guidance
   changes, calibration artifact, validation, CI URL/status, final git state,
   residual risks, and recommended next goal shape.

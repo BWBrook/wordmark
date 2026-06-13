@@ -92,3 +92,66 @@ All checks passed!
 
 `make test-external` was not run because the final diff does not touch
 external-tool, render, Quarto, or DOCX integration behavior.
+
+## 2026-06-13 13:17 AEST - Implementation Commit CI Passed
+
+Staged exact approved paths only for the guidance/calibration commit:
+
+```text
+README.md
+docs/authoring-workflow.md
+docs/critical-reviewer-agent-brief.md
+docs/critical-reviewer-playbook.md
+docs/goals/002-critical-reviewer-throughput/Goal.md
+docs/goals/002-critical-reviewer-throughput/Log.md
+docs/goals/002-critical-reviewer-throughput/Plan.md
+docs/goals/002-critical-reviewer-throughput/Runbook.md
+docs/log/2026-06-13_critical_reviewer_throughput.md
+examples/reviewer_calibration/critical_line_edits.yaml
+tests/test_reviewer_calibration.py
+```
+
+Confirmed `.DS_Store` remained untracked and unstaged.
+
+Guidance/calibration commit:
+
+```text
+483c687 docs: strengthen critical reviewer guidance
+```
+
+Push result:
+
+```text
+To github.com:BWBrook/wordmark.git
+   355662d..483c687  main -> main
+```
+
+Hosted CI for the guidance/calibration commit:
+
+```text
+run = 27454942297
+url = https://github.com/BWBrook/wordmark/actions/runs/27454942297
+headSha = 483c68721a14adfc7392107742bb9bed57580da9
+status = completed
+conclusion = success
+jobs = lint success; pure-python (py3.14) success
+```
+
+Status after hosted CI verification:
+
+```text
+## main...origin/main
+?? .DS_Store
+```
+
+Residual risk: this goal improves guidance and calibration only; it does not
+measure future reviewer behaviour with an LLM evaluation harness and does not
+change DOCX edit mechanics. The recommended next goal shape is a bounded
+human-in-the-loop dry run against a disposable or synthetic review document:
+apply the new brief, inspect the resulting tracked-edits/comment mix, and tune
+guidance only if the observed failure mode remains agent judgment rather than
+engine behaviour.
+
+This final goal-log/plan bookkeeping update is docs-only. The orchestrator
+wake-up will be sent after this bookkeeping update is pushed and the final
+hosted `ci` run is inspected.
