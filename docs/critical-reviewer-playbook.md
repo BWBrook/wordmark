@@ -14,12 +14,51 @@ Use two channels of intervention intentionally:
 1. Tracked changes for line-level or sentence-level fixes you are confident should be directly applied.
 2. Comments for structural, conceptual, evidentiary, or interpretation issues the student/author should resolve.
 
+The default stance is line-edit first. If the change is a normal editor's fix
+and the intended wording is clear, apply it as a tracked edit instead of
+leaving a vague comment. Reviewer confidence should be spent on the page:
+grammar, punctuation, British English spelling, concise phrasing, local sentence
+flow, and obvious antecedent fixes usually belong in tracked changes.
+
 Typical supervisor-level comment themes:
 - scope creep or unclear narrative focus
 - unsupported claims or weak inference
 - missing methods detail and reproducibility gaps
 - figure/table readability and cross-reference consistency
 - framing, contribution clarity, and audience fit
+
+## Edit-versus-comment decision rules
+Use tracked edits when all of these are true:
+1. The fault is local to a word, phrase, clause, sentence, or short paragraph.
+2. The replacement preserves the author's intended meaning.
+3. A reasonable supervisor would not need the author to choose among competing scientific interpretations.
+4. The edit can be expressed as a precise, auditable replacement.
+
+Use comments when any of these are true:
+1. The fix needs author judgment, new evidence, new analysis, or source checking.
+2. The issue affects argument structure, study design, interpretation, or claims.
+3. Several valid rewrites are possible and the choice changes emphasis.
+4. The edit would require broad paragraph rewriting that Wordmark cannot represent cleanly.
+
+When both channels are useful, do the local tracked edit first and add a comment
+only for the remaining author decision. Avoid comments that merely describe an
+edit you could safely make yourself.
+
+## Calibration examples
+Weak reviewer feedback says what might be wrong but leaves easy work for the
+author. Preferred feedback applies the safe edit and reserves comments for
+judgment calls.
+
+| Situation | Weak feedback | Preferred action |
+| --- | --- | --- |
+| Subject-verb agreement | "Check grammar in this sentence." | Track `results suggests` -> `results suggest`. |
+| Hyphenation | "Maybe hyphenate this phrase." | Track `bird specific` -> `bird-specific`. |
+| British English | "Use consistent spelling." | Track `behavior` -> `behaviour` where journal style allows. |
+| Wordiness | "This could be shorter." | Track `in order to` -> `to` when meaning is unchanged. |
+| Antecedent clarity | "This is unclear." | Track `This suggests` -> `This pattern suggests` if the antecedent is explicit. |
+| Sentence flow | "Sentence is awkward." | Track a focused clause-order fix if the logic is unchanged. |
+| Missing evidence | "Needs evidence." | Comment with the exact claim, why support is needed, and what evidence/source to add. |
+| Interpretation choice | "Maybe soften this claim." | Comment if softening changes the scientific interpretation or conclusion. |
 
 ## Safety defaults
 1. Never overwrite original files; always write edited outputs to `examples/edited/` (or a user-specified safe output path) with a dated suffix.
@@ -77,6 +116,7 @@ When authoring patches:
 1. Start narrow: phrase-level replacements outperform long literal paragraph strings for reliability.
 2. Add anchor context when ambiguity is plausible (`expected_text`, `context_before`, `context_after`, `occurrence`).
 3. For repeated tokens, specify `occurrence` where available.
+4. Prefer several small, high-confidence replacements over one sweeping paragraph rewrite.
 
 Fidelity heuristics for reviewer-style edits:
 1. For tiny clause fixes, target only the minimum phrase to preserve concise tracked deltas.
@@ -84,6 +124,7 @@ Fidelity heuristics for reviewer-style edits:
 3. For punctuation/hyphenation fixes (`bird specific` -> `bird-specific`), use focused replacement operations to keep revision scope minimal.
 4. Use comments rather than inserted text when the action belongs to the student (for example placeholder checks like keyword/order verification).
 5. If a candidate edit would produce broad delete+insert redlines, split it into smaller operations or convert it to comment guidance.
+6. If the edit is obvious but repeated, preflight the hit count and use `replace_text_global` only when every occurrence has the same intended correction.
 
 ## Interpreting UNO fallback output
 UNO payload now includes per-operation diagnostics:
@@ -120,6 +161,8 @@ Good supervisor comments are:
 1. Specific about the issue.
 2. Actionable with clear next step.
 3. Proportionate in tone and scope.
+4. Focused on decisions the author must make, not on routine grammar or style
+   fixes that should have been tracked.
 
 Template pattern:
 - Observation: what is unclear or weak.

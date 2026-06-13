@@ -151,6 +151,13 @@ uv run wordmark manuscript apply-proposals artifacts/manuscript_rounds/<round_id
 
 See `docs/markdown-quarto-collab-workflow.md` for the full operator workflow.
 
+## Critical reviewer guidance
+For reviewer-style manuscript work, use:
+- `docs/critical-reviewer-playbook.md` for the full edit-versus-comment stance.
+- `docs/critical-reviewer-agent-brief.md` as the short reusable agent prompt.
+- `examples/reviewer_calibration/critical_line_edits.yaml` for calibration
+  examples that distinguish tracked line edits from comment-only issues.
+
 ## Canonical and edited fixtures
 - Canonical immutable examples live under `examples/canonical/`.
 - Hard-pattern preflight fixtures live under `examples/canonical/hard_patterns/`.

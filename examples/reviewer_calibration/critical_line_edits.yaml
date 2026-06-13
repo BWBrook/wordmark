@@ -1,0 +1,149 @@
+schema_version: 1
+purpose: >
+  Calibration examples for Wordmark critical-review agents. Routine, local
+  language fixes should become tracked edits; scientific, structural,
+  evidentiary, and author-judgment issues should become comments.
+cases:
+  - id: grammar_agreement_results_suggest
+    category: grammar_agreement
+    decision: tracked_edit
+    source: "The results suggests that habitat loss remains the strongest predictor."
+    weak_feedback: "Check the grammar in this sentence."
+    preferred_tracked_edits:
+      - find: "results suggests"
+        replace: "results suggest"
+        rationale: "Subject-verb agreement is an unambiguous local correction."
+    preferred_comments: []
+    rationale: "The intended meaning is clear and the edit preserves it."
+
+  - id: punctuation_hyphenation_bird_specific
+    category: punctuation_hyphenation
+    decision: tracked_edit
+    source: "We fitted bird specific detection covariates before ranking models."
+    weak_feedback: "Maybe hyphenate this phrase."
+    preferred_tracked_edits:
+      - find: "bird specific"
+        replace: "bird-specific"
+        rationale: "The compound modifier is clear and should be fixed directly."
+    preferred_comments: []
+    rationale: "This is a routine copy-edit, not an author decision."
+
+  - id: british_english_behaviour
+    category: british_english
+    decision: tracked_edit
+    source: "The behavior of the posterior samples was stable across chains."
+    weak_feedback: "Use British English consistently."
+    preferred_tracked_edits:
+      - find: "behavior"
+        replace: "behaviour"
+        rationale: "British English is the default reviewer convention."
+    preferred_comments: []
+    rationale: "The spelling change does not alter technical meaning."
+
+  - id: concision_in_order_to
+    category: concision
+    decision: tracked_edit
+    source: "We used posterior predictive checks in order to assess model fit."
+    weak_feedback: "This could be more concise."
+    preferred_tracked_edits:
+      - find: "in order to"
+        replace: "to"
+        rationale: "The shorter wording is equivalent and clearer."
+    preferred_comments: []
+    rationale: "The replacement is safe and should not be delegated back to the author."
+
+  - id: clarity_antecedent_this_pattern
+    category: clarity
+    decision: tracked_edit
+    source: "Detection declined in heavily grazed sites. This suggests a local disturbance effect."
+    weak_feedback: "The second sentence starts vaguely."
+    preferred_tracked_edits:
+      - find: "This suggests"
+        replace: "This pattern suggests"
+        rationale: "The antecedent is explicit in the previous sentence."
+    preferred_comments: []
+    rationale: "The local clarification improves readability without changing interpretation."
+
+  - id: sentence_flow_clause_order
+    category: sentence_flow
+    decision: tracked_edit
+    source: "Although uncertainty remained high, across all sites the direction of the effect was consistent."
+    weak_feedback: "This sentence is awkward."
+    preferred_tracked_edits:
+      - find: "across all sites the direction of the effect was consistent"
+        replace: "the direction of the effect was consistent across all sites"
+        rationale: "The clause order improves flow while preserving meaning."
+    preferred_comments: []
+    rationale: "A focused sentence-flow edit is more useful than a generic comment."
+
+  - id: grammar_number_species_are
+    category: grammar_agreement
+    decision: tracked_edit
+    source: "The three species was recorded in four additional survey blocks."
+    weak_feedback: "Check number agreement."
+    preferred_tracked_edits:
+      - find: "species was"
+        replace: "species were"
+        rationale: "The sentence refers to multiple species."
+    preferred_comments: []
+    rationale: "The correction is grammatically clear from the surrounding quantifier."
+
+  - id: concision_needless_preface
+    category: concision
+    decision: tracked_edit
+    source: "It is important to note that fire history varied among reserves."
+    weak_feedback: "This could be tightened."
+    preferred_tracked_edits:
+      - find: "It is important to note that fire history varied"
+        replace: "Fire history varied"
+        rationale: "The preface adds no scientific information."
+    preferred_comments: []
+    rationale: "The edited sentence is shorter and keeps the same claim."
+
+  - id: missing_evidence_claim
+    category: missing_evidence
+    decision: comment
+    source: "This management intervention is the most cost-effective option for all reserves."
+    weak_feedback: "Needs evidence."
+    preferred_tracked_edits: []
+    preferred_comments:
+      - anchor: "most cost-effective option for all reserves"
+        text: "Please add the evidence or analysis supporting this comparative cost-effectiveness claim, or narrow the claim to match the evidence presented."
+        rationale: "The agent cannot infer the missing economic basis from wording alone."
+    rationale: "The issue requires evidence or claim adjustment by the author."
+
+  - id: interpretation_strength
+    category: interpretation_choice
+    decision: comment
+    source: "The model proves that grazing caused the decline."
+    weak_feedback: "Maybe soften this."
+    preferred_tracked_edits: []
+    preferred_comments:
+      - anchor: "proves that grazing caused"
+        text: "Please decide whether the evidence supports causal language here; if not, revise toward association or contribution rather than proof."
+        rationale: "Changing causal strength is an interpretive decision."
+    rationale: "The scientifically appropriate strength of claim needs author judgment."
+
+  - id: structural_narrative_focus
+    category: structure
+    decision: comment
+    source: "The paragraph shifts from survey design to policy implications and then back to sampling effort."
+    weak_feedback: "This paragraph is confusing."
+    preferred_tracked_edits: []
+    preferred_comments:
+      - anchor: "survey design to policy implications"
+        text: "Please split or reorder this paragraph so survey design, sampling effort, and policy implications each have a clear sequence."
+        rationale: "The issue is paragraph organisation, not a local copy-edit."
+    rationale: "Several valid restructures are possible, so the author should choose."
+
+  - id: methods_reproducibility_gap
+    category: methods_detail
+    decision: comment
+    source: "We removed outliers before analysis."
+    weak_feedback: "Add more methods detail."
+    preferred_tracked_edits: []
+    preferred_comments:
+      - anchor: "removed outliers before analysis"
+        text: "Please specify the outlier rule, threshold, and number of records removed so the analysis is reproducible."
+        rationale: "The missing information cannot be supplied by copy-editing."
+    rationale: "This is a reproducibility gap requiring author input."

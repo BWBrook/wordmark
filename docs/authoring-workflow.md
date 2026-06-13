@@ -24,6 +24,14 @@ make lint
 - Mutating commands (`comment add`, `edit apply`, `review accept`, `review reject`) acquire an exclusive per-document lock at `<docx>.wordmark.lock`.
 - Concurrent operations against the same `.docx` are queued by the lock, avoiding UNO write collisions.
 
+## Critical reviewer mode
+Use `docs/critical-reviewer-playbook.md` for full reviewer guidance and
+`docs/critical-reviewer-agent-brief.md` as the short agent-facing prompt. The
+default reviewer stance is to apply high-confidence tracked line edits for
+grammar, punctuation, British English normalisation, concision, clarity, and
+sentence flow. Reserve comments for scientific, structural, evidentiary,
+interpretive, or author-choice issues.
+
 ## 1) Inspect a document
 ```bash
 uv run wordmark inspect docs/input.docx --json
