@@ -37,8 +37,8 @@
 - [x] Run `uv lock --check`.
 - [x] Run `uv run pytest`.
 - [x] Run `make check`.
-- [ ] Stage exact approved files only.
-- [ ] Confirm `.DS_Store` and ignored artifacts are unstaged.
-- [ ] Commit and push.
-- [ ] Inspect hosted `ci` for the pushed SHA.
+- [x] Stage exact approved files only.
+- [x] Confirm `.DS_Store` and ignored artifacts are unstaged.
+- [x] Commit and push.
+- [x] Inspect hosted `ci` for the pushed SHA.
 - [ ] Wake the orchestrator with evidence and the Barry benchmark path.
