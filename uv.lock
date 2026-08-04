@@ -336,7 +336,6 @@ source = { editable = "." }
 dependencies = [
     { name = "lxml" },
     { name = "pillow" },
-    { name = "python-docx" },
     { name = "pyyaml" },
     { name = "typer" },
 ]
@@ -345,6 +344,7 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "python-docx" },
     { name = "ruff" },
 ]
 
@@ -354,7 +354,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=10,<12" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8,<9" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5,<6" },
-    { name = "python-docx", specifier = ">=1.2,<2" },
+    { name = "python-docx", marker = "extra == 'dev'", specifier = ">=1.2,<2" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11,<1" },
     { name = "typer", specifier = ">=0.12,<1" },

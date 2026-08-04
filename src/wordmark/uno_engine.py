@@ -11,8 +11,8 @@ from contextlib import contextmanager
 from importlib.resources import as_file, files
 import json
 import os
-from pathlib import Path
 import platform
+from pathlib import Path
 import shutil
 import subprocess
 import tempfile
@@ -46,13 +46,9 @@ def _helper_script_path():
             if helper_path.exists():
                 yield helper_path
                 return
-    except (FileNotFoundError, ModuleNotFoundError):
-        pass
-
-    checkout_script = Path(__file__).resolve().parents[2] / "scripts" / "uno_replace.py"
-    if not checkout_script.exists():
-        raise UnoEngineError(f"UNO helper script missing: {checkout_script}")
-    yield checkout_script
+    except (FileNotFoundError, ModuleNotFoundError) as exc:
+        raise UnoEngineError("Packaged UNO helper resource is unavailable") from exc
+    raise UnoEngineError("Packaged UNO helper resource is unavailable")
 
 
 def _w(local: str) -> str:

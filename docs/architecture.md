@@ -33,7 +33,7 @@ Wordmark uses a dual-engine mutation strategy:
   - recommended engine/strategy
 - Keeps untouched ZIP parts byte-identical.
 
-2. UNO fallback engine (`src/wordmark/uno_engine.py` + `scripts/uno_replace.py`)
+2. UNO fallback engine (`src/wordmark/uno_engine.py` + `src/wordmark/_resources/uno_replace.py`)
 - Used for unsupported/high-risk patch operations.
 - Delegates to system Python UNO bindings (`/usr/bin/python3`) and headless LibreOffice.
 - Supports fallback operations:

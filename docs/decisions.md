@@ -246,3 +246,14 @@
 - Context: The project has moved from its original WSL/Linux setup onto Barry's Mac mini dev box, where Homebrew and uv-managed Python 3.14 are available and the previous 3.11/3.12 CI matrix no longer reflects the intended local R&D baseline.
 - Decision: Raise the package requirement and lint target to Python 3.14, add a repo-local `.python-version`, update hosted CI to Python 3.14, and keep uv as the environment manager for all local checks.
 - Consequences: The Mac mini development environment, local Makefile sync target, and hosted checks now agree on Python 3.14. Older Python compatibility is intentionally de-scoped until there is a concrete downstream need.
+
+## 2026-08-04 - ADR-039: Resolve UNO fallback through the packaged helper only
+- Status: accepted
+- Context: The packaged UNO helper is the runtime resource for the private
+  package, while `scripts/uno_replace.py` only duplicated that helper behind a
+  checkout-specific fallback path.
+- Decision: Resolve `uno_replace.py` exclusively from the packaged
+  `wordmark._resources` resource and remove the obsolete top-level wrapper.
+- Consequences: Source and wheel installs share one helper path, with no
+  direct-checkout compatibility branch to maintain. UNO operation semantics
+  and the explicit platform opt-in remain unchanged.
