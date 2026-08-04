@@ -257,3 +257,18 @@
 - Consequences: Source and wheel installs share one helper path, with no
   direct-checkout compatibility branch to maintain. UNO operation semantics
   and the explicit platform opt-in remain unchanged.
+
+## 2026-08-04 - ADR-040: Retain fidelity-path infrastructure pending usage evidence
+- Status: provisional
+- Context: A read-only audit examined sidecars, operation transcripts,
+  edit-policy and fallback modes, interop/risk diagnostics, UNO precision and
+  retry handling, manuscript rounds, and the fidelity-critical preflight/apply
+  path. Each has live callers, tests, documented contracts, or a direct
+  fidelity rationale, but downstream usage evidence is incomplete.
+- Decision: Make no source, test, configuration, or historical-record change
+  in this tranche. Retain the audited infrastructure provisionally and defer
+  deletion or refactoring until Barry supplies real usage evidence or
+  representative fallback cases that support a narrow, safe cut.
+- Consequences: Current review and manuscript workflows retain their existing
+  semantics and safeguards. The deferred decision remains explicit rather than
+  being inferred from line count or the absence of an in-repo consumer.
