@@ -152,6 +152,11 @@ Defaults in strict mode:
 - no tracked paragraph rewrite fallback
 - OOXML strict -> UNO -> comment-only fallback
 - localized replacements emit minimal tracked deltas (for example insert-only and hyphen-only changes remain narrow)
+- `replace_text_once` evaluates the exact first review-visible target window;
+  unrelated fields, comments, or special runs elsewhere in the paragraph do
+  not by themselves force fallback
+- successful tracked OOXML edits enable Word's document-level track-revisions
+  setting
 
 Hard-pattern fixtures for regression testing are in `examples/canonical/hard_patterns/`.
 

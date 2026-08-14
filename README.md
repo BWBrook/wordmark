@@ -162,7 +162,11 @@ For reviewer-style manuscript work, use:
 - Canonical immutable examples live under `examples/canonical/`.
 - Hard-pattern preflight fixtures live under `examples/canonical/hard_patterns/`.
 - Edited/generated working outputs belong under `examples/edited/`.
-- Default safety policy is high-fidelity first: strict OOXML localized edits, then UNO fallback, then comment-only fallback (unless overridden by CLI/config flags).
+- Default safety policy is high-fidelity first: strict OOXML edits are allowed
+  only for a compatible first-match text window outside protected structures,
+  then UNO fallback, then comment-only fallback (unless overridden by
+  CLI/config flags). Tracked OOXML edits also enable Word's document-level
+  track-revisions setting.
 
 ## Edit policy controls
 ```bash

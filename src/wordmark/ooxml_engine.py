@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from wordmark import ooxml_replace
 from wordmark import ooxml_review
 
 DOC_PART = "word/document.xml"
+SETTINGS_PART = "word/settings.xml"
 COMMENTS_PART = "word/comments.xml"
 DOC_RELS_PART = "word/_rels/document.xml.rels"
 CONTENT_TYPES_PART = "[Content_Types].xml"
@@ -93,6 +93,11 @@ def _next_numeric_id(elements: list[etree._Element], attr_qname: str) -> int:
     return (max(values) + 1) if values else 0
 
 
+def _next_document_revision_id(document_root: etree._Element) -> int:
+    elements = document_root.xpath(".//*[@w:id]", namespaces=NSMAP)
+    return _next_numeric_id(elements, _w_attr("id"))
+
+
 def _next_relationship_id(elements: list[etree._Element]) -> str:
     existing = {str(el.get("Id")) for el in elements if el.get("Id") is not None}
     numeric_suffixes: list[int] = []
@@ -139,6 +144,7 @@ def _replace_text_once_localized(
     author: str,
     revision_id: int,
     timestamp: str,
+    plan: ooxml_replace.LocalizedReplacePlan | None = None,
 ) -> dict[str, Any] | None:
     return ooxml_replace.replace_text_once_localized(
         paragraph,
@@ -149,11 +155,40 @@ def _replace_text_once_localized(
         author=author,
         revision_id=revision_id,
         timestamp=timestamp,
+        plan=plan,
     )
 
 
-def _text_run_spans_multiple_runs(paragraph: etree._Element, find_text: str) -> bool:
-    return ooxml_replace.text_run_spans_multiple_runs(paragraph, find_text)
+def _plan_text_once_localized(
+    document_root: etree._Element,
+    paragraph: etree._Element,
+    find_text: str,
+) -> ooxml_replace.LocalizedReplacePlan:
+    return ooxml_replace.plan_replace_text_once_localized(
+        paragraph,
+        paragraph_text_fn=lambda current_paragraph: _paragraph_text(
+            current_paragraph,
+            text_mode=TEXT_MODE_REVIEW_VISIBLE,
+        ),
+        find_text=find_text,
+        initial_scope_state=ooxml_replace.protected_scope_state_before(
+            document_root,
+            paragraph,
+        ),
+    )
+
+
+def _inherited_protected_scope_patterns(
+    document_root: etree._Element,
+    paragraph: etree._Element,
+) -> list[str]:
+    state = ooxml_replace.protected_scope_state_before(document_root, paragraph)
+    patterns = []
+    if state.complex_field_depth:
+        patterns.append("complex_field_range")
+    if state.active_comment_ids:
+        patterns.append("comment_range")
+    return patterns
 
 
 def _replace_paragraph_content(
@@ -223,6 +258,7 @@ def _paragraph_risky_patterns(paragraph: etree._Element) -> list[str]:
         _w("hyperlink"): "hyperlink",
         _w("instrText"): "instrText",
         _w("fldChar"): "fldChar",
+        _w("fldSimple"): "fldSimple",
         _w("drawing"): "drawing",
         _w("object"): "object",
         _w("pict"): "pict",
@@ -234,6 +270,13 @@ def _paragraph_risky_patterns(paragraph: etree._Element) -> list[str]:
         _w("sym"): "sym",
         _w("footnoteReference"): "footnoteReference",
         _w("endnoteReference"): "endnoteReference",
+        _w("commentRangeStart"): "commentRangeStart",
+        _w("commentRangeEnd"): "commentRangeEnd",
+        _w("commentReference"): "commentReference",
+        _w("ins"): "existing_revision",
+        _w("del"): "existing_revision",
+        _w("moveTo"): "existing_revision",
+        _w("moveFrom"): "existing_revision",
     }
     found: set[str] = set()
     for el in paragraph.iter():
@@ -245,6 +288,82 @@ def _paragraph_risky_patterns(paragraph: etree._Element) -> list[str]:
 
 def _paragraph_has_risky_markup(paragraph: etree._Element) -> bool:
     return bool(_paragraph_risky_patterns(paragraph))
+
+
+_SETTINGS_TAGS_BEFORE_TRACK_REVISIONS = {
+    _w("writeProtection"),
+    _w("view"),
+    _w("zoom"),
+    _w("removePersonalInformation"),
+    _w("removeDateAndTime"),
+    _w("doNotDisplayPageBoundaries"),
+    _w("displayBackgroundShape"),
+    _w("printPostScriptOverText"),
+    _w("printFractionalCharacterWidth"),
+    _w("printFormsData"),
+    _w("embedTrueTypeFonts"),
+    _w("embedSystemFonts"),
+    _w("saveSubsetFonts"),
+    _w("saveFormsData"),
+    _w("mirrorMargins"),
+    _w("alignBordersAndEdges"),
+    _w("bordersDoNotSurroundHeader"),
+    _w("bordersDoNotSurroundFooter"),
+    _w("gutterAtTop"),
+    _w("hideSpellingErrors"),
+    _w("hideGrammaticalErrors"),
+    _w("activeWritingStyle"),
+    _w("proofState"),
+    _w("formsDesign"),
+    _w("attachedTemplate"),
+    _w("linkStyles"),
+    _w("stylePaneFormatFilter"),
+    _w("stylePaneSortMethod"),
+    _w("documentType"),
+    _w("mailMerge"),
+    _w("revisionView"),
+}
+
+
+def _track_revisions_insertion_index(settings_root: etree._Element) -> int:
+    index = 0
+    for child in settings_root:
+        if child.tag == _w("trackRevisions"):
+            continue
+        if child.tag not in _SETTINGS_TAGS_BEFORE_TRACK_REVISIONS:
+            break
+        index += 1
+    return index
+
+
+def _ensure_track_revisions_enabled(pkg: DocxPackage) -> None:
+    if not pkg.has_part(SETTINGS_PART):
+        raise OoxmlUnsupportedOperation(
+            "Tracked revisions were created but word/settings.xml is missing"
+        )
+
+    settings_root = pkg.read_xml(SETTINGS_PART)
+    existing = settings_root.findall(_w("trackRevisions"))
+    insertion_index = _track_revisions_insertion_index(settings_root)
+    if len(existing) == 1:
+        value = existing[0].get(_w_attr("val"))
+        if (
+            value is None or value.lower() not in {"false", "off", "0"}
+        ) and settings_root.index(existing[0]) == insertion_index:
+            return
+
+    if existing:
+        track_revisions = existing[0]
+        track_revisions.attrib.pop(_w_attr("val"), None)
+        for element in existing:
+            settings_root.remove(element)
+    else:
+        track_revisions = etree.Element(_w("trackRevisions"))
+
+    insertion_index = _track_revisions_insertion_index(settings_root)
+    settings_root.insert(insertion_index, track_revisions)
+
+    pkg.write_xml(SETTINGS_PART, settings_root)
 
 
 def inspect(path: Path, *, text_mode: str = TEXT_MODE_REVIEW_VISIBLE) -> InspectReport:
@@ -426,7 +545,7 @@ def preflight_patch(
     track_changes: bool,
     allow_paragraph_rewrite_tracked: bool,
 ) -> dict[str, Any]:
-    """Classify patch operations without mutating the document."""
+    """Classify ordered patch operations without writing the document."""
     operations = patch_data.get("operations")
     if not isinstance(operations, list) or not operations:
         raise ValueError("Patch must include non-empty 'operations' list")
@@ -444,6 +563,8 @@ def preflight_patch(
         "requires_uno": 0,
         "unsupported_high_risk": 0,
     }
+    next_revision_id = _next_document_revision_id(doc_root)
+    preflight_timestamp = "1970-01-01T00:00:00Z"
 
     for i, op in enumerate(operations):
         op_type = str(op.get("type"))
@@ -500,7 +621,10 @@ def preflight_patch(
                 op_reports.append(report)
                 continue
 
-            risky_patterns = _paragraph_risky_patterns(paragraph)
+            risky_patterns = sorted(
+                set(_paragraph_risky_patterns(paragraph))
+                | set(_inherited_protected_scope_patterns(doc_root, paragraph))
+            )
             if risky_patterns:
                 report.update(
                     {
@@ -536,6 +660,33 @@ def preflight_patch(
                     }
                 )
 
+            if report["classification"] == "safe_localized":
+                old_text = _paragraph_text(paragraph)
+                new_text = str(op.get("new_text", ""))
+                mutation = None
+                if old_text:
+                    plan = _plan_text_once_localized(doc_root, paragraph, old_text)
+                    mutation = _replace_text_once_localized(
+                        paragraph,
+                        find_text=old_text,
+                        replacement=new_text,
+                        track_changes=track_changes,
+                        author="preflight",
+                        revision_id=next_revision_id,
+                        timestamp=preflight_timestamp,
+                        plan=plan,
+                    )
+                if mutation is None:
+                    _replace_paragraph_content(
+                        paragraph,
+                        new_text,
+                        track_changes=track_changes,
+                        author="preflight",
+                        revision_id=next_revision_id,
+                        timestamp=preflight_timestamp,
+                    )
+                next_revision_id += 2
+
             summary[report["classification"]] += 1
             op_reports.append(report)
             continue
@@ -547,7 +698,7 @@ def preflight_patch(
                 anchor = _anchor_from_operation(op)
                 idx, paragraph, anchor_resolution = _resolve_anchor_spec(
                     doc_root,
-                    anchor=anchor,
+                    anchor=anchor if anchor is not None else {"occurrence": 1},
                     fallback_text=find_text,
                 )
                 report["paragraph_index"] = idx
@@ -600,8 +751,24 @@ def preflight_patch(
                 op_reports.append(report)
                 continue
 
-            risky_patterns = _paragraph_risky_patterns(paragraph)
-            if risky_patterns:
+            risky_patterns = sorted(
+                set(_paragraph_risky_patterns(paragraph))
+                | set(_inherited_protected_scope_patterns(doc_root, paragraph))
+            )
+            plan = _plan_text_once_localized(doc_root, paragraph, find_text)
+            if plan.status == "safe":
+                report.update(
+                    {
+                        "classification": "safe_localized",
+                        "recommended_strategy": plan.strategy,
+                        "recommended_engine": "ooxml",
+                        "reason": "localized_strategy_available",
+                        "reason_code": "localized_strategy_available",
+                        "reason_detail": f"Localized strategy {plan.strategy} is available",
+                        "detected_patterns": risky_patterns,
+                    }
+                )
+            elif plan.status == "unsafe_markup":
                 report.update(
                     {
                         "classification": "unsupported_high_risk",
@@ -609,35 +776,13 @@ def preflight_patch(
                         "recommended_engine": "uno",
                         "reason": "risky_markup_detected",
                         "reason_code": "risky_markup_detected",
-                        "reason_detail": "Resolved paragraph contains risky OOXML markup",
-                        "detected_patterns": risky_patterns,
+                        "reason_detail": "First review-visible match intersects unsafe OOXML markup",
+                        "detected_patterns": sorted(
+                            set(risky_patterns) | set(plan.detected_patterns)
+                        ),
                     }
                 )
-                summary[report["classification"]] += 1
-                op_reports.append(report)
-                continue
-
-            probe = _replace_text_once_localized(
-                deepcopy(paragraph),
-                find_text=find_text,
-                replacement=replacement,
-                track_changes=track_changes,
-                author="preflight",
-                revision_id=1,
-                timestamp="1970-01-01T00:00:00Z",
-            )
-            if probe is not None:
-                report.update(
-                    {
-                        "classification": "safe_localized",
-                        "recommended_strategy": str(probe.get("strategy", "localized_run")),
-                        "recommended_engine": "ooxml",
-                        "reason": "localized_strategy_available",
-                        "reason_code": "localized_strategy_available",
-                        "reason_detail": f"Localized strategy {probe.get('strategy', 'localized_run')} is available",
-                    }
-                )
-            elif _text_run_spans_multiple_runs(paragraph, find_text):
+            elif plan.status == "incompatible_multi_run":
                 report.update(
                     {
                         "classification": "needs_multi_run_localized",
@@ -646,7 +791,11 @@ def preflight_patch(
                         "reason": "match_spans_multiple_runs",
                         "reason_code": "match_spans_multiple_runs",
                         "reason_detail": "Match spans runs that are not safely localizable in this paragraph",
-                        "detected_patterns": ["match_spans_multiple_runs"],
+                        "detected_patterns": sorted(
+                            set(risky_patterns)
+                            | set(plan.detected_patterns)
+                            | {"match_spans_multiple_runs"}
+                        ),
                     }
                 )
             elif track_changes and not allow_paragraph_rewrite_tracked:
@@ -671,6 +820,47 @@ def preflight_patch(
                         "reason_detail": "Fallback would require paragraph rewrite",
                     }
                 )
+
+            if report["recommended_engine"] == "ooxml":
+                mutation = None
+                if plan.status == "safe":
+                    mutation = _replace_text_once_localized(
+                        paragraph,
+                        find_text=find_text,
+                        replacement=replacement,
+                        track_changes=track_changes,
+                        author="preflight",
+                        revision_id=next_revision_id,
+                        timestamp=preflight_timestamp,
+                        plan=plan,
+                    )
+                elif risky_patterns:
+                    report.update(
+                        {
+                            "classification": "unsupported_high_risk",
+                            "recommended_strategy": "none",
+                            "recommended_engine": "uno",
+                            "reason": "risky_markup_detected",
+                            "reason_code": "risky_markup_detected",
+                            "reason_detail": "Paragraph rewrite fallback intersects unsafe OOXML markup",
+                            "detected_patterns": risky_patterns,
+                        }
+                    )
+                else:
+                    current_text = _paragraph_text(paragraph)
+                    mutation = _replace_paragraph_content(
+                        paragraph,
+                        current_text.replace(find_text, replacement, 1),
+                        track_changes=track_changes,
+                        author="preflight",
+                        revision_id=next_revision_id,
+                        timestamp=preflight_timestamp,
+                    )
+
+                if report["recommended_engine"] == "ooxml":
+                    if mutation is None:
+                        raise RuntimeError("OOXML preflight recommendation could not be applied")
+                    next_revision_id += 2
 
             summary[report["classification"]] += 1
             op_reports.append(report)
@@ -725,9 +915,7 @@ def apply_patch(
         raise ValueError("No paragraphs found in document body")
 
     timestamp = _now_w3c()
-    revision_base = _next_numeric_id(
-        doc_root.xpath(".//w:ins | .//w:del", namespaces=NSMAP), _w_attr("id")
-    )
+    revision_base = _next_document_revision_id(doc_root)
 
     op_reports: list[dict[str, Any]] = []
     next_revision_id = revision_base
@@ -744,7 +932,10 @@ def apply_patch(
                 idx, p, anchor_resolution = _resolve_anchor_spec(doc_root, anchor=resolve_anchor)
             except AnchorResolutionError as exc:
                 raise ValueError(f"{exc.code}: {exc}") from exc
-            risky_patterns = _paragraph_risky_patterns(p)
+            risky_patterns = sorted(
+                set(_paragraph_risky_patterns(p))
+                | set(_inherited_protected_scope_patterns(doc_root, p))
+            )
             if risky_patterns:
                 raise OoxmlUnsupportedOperation(
                     "Risky OOXML markup detected for paragraph rewrite "
@@ -759,6 +950,7 @@ def apply_patch(
             new_text = str(op.get("new_text", ""))
             report = None
             if old_text:
+                plan = _plan_text_once_localized(doc_root, p, old_text)
                 report = _replace_text_once_localized(
                     p,
                     find_text=old_text,
@@ -767,6 +959,7 @@ def apply_patch(
                     author=author,
                     revision_id=next_revision_id,
                     timestamp=timestamp,
+                    plan=plan,
                 )
 
             if report is None:
@@ -828,27 +1021,42 @@ def apply_patch(
                     "candidates": [idx],
                 }
 
-            risky_patterns = _paragraph_risky_patterns(paragraph)
-            if risky_patterns:
+            risky_patterns = sorted(
+                set(_paragraph_risky_patterns(paragraph))
+                | set(_inherited_protected_scope_patterns(doc_root, paragraph))
+            )
+            plan = _plan_text_once_localized(doc_root, paragraph, find_text)
+            if plan.status == "unsafe_markup":
+                target_patterns = sorted(
+                    set(risky_patterns) | set(plan.detected_patterns)
+                )
                 raise OoxmlUnsupportedOperation(
                     "Risky OOXML markup detected for localized replace_text_once "
-                    f"at paragraph {idx}: {', '.join(risky_patterns)}"
+                    f"at paragraph {idx}: {', '.join(target_patterns)}"
                 )
 
-            report = _replace_text_once_localized(
-                paragraph,
-                find_text=find_text,
-                replacement=replacement,
-                track_changes=track_changes,
-                author=author,
-                revision_id=next_revision_id,
-                timestamp=timestamp,
-            )
+            report = None
+            if plan.status == "safe":
+                report = _replace_text_once_localized(
+                    paragraph,
+                    find_text=find_text,
+                    replacement=replacement,
+                    track_changes=track_changes,
+                    author=author,
+                    revision_id=next_revision_id,
+                    timestamp=timestamp,
+                    plan=plan,
+                )
             if report is None:
                 if track_changes and not allow_paragraph_rewrite_tracked:
                     raise OoxmlUnsupportedOperation(
                         "Localized replace unsupported and tracked paragraph rewrite disallowed "
                         f"for find={find_text!r} at paragraph {idx}"
+                    )
+                if risky_patterns:
+                    raise OoxmlUnsupportedOperation(
+                        "Risky OOXML markup detected for paragraph rewrite fallback "
+                        f"at paragraph {idx}: {', '.join(risky_patterns)}"
                     )
                 new_text = current.replace(find_text, replacement, 1)
                 report = _replace_paragraph_content(
@@ -890,6 +1098,8 @@ def apply_patch(
 
     if not dry_run:
         pkg.write_xml(DOC_PART, doc_root)
+        if track_changes and doc_root.xpath(".//w:ins | .//w:del", namespaces=NSMAP):
+            _ensure_track_revisions_enabled(pkg)
         pkg.save(path)
 
     return result

@@ -58,7 +58,7 @@
 - Consequences: Safer disambiguation for comments and edits; unresolved/ambiguous anchors now surface explicit error codes.
 
 ## 2026-02-23 - ADR-010: Risky-markup-first preflight routing
-- Status: accepted
+- Status: superseded by ADR-041
 - Context: Some paragraphs can appear localizable but still include fragile OOXML structures (hyperlinks, field codes, content controls, break/tab constructs).
 - Decision: Preflight and apply layers treat risky markup as high risk and route to fallback policy rather than attempting localized tracked mutation in strict workflows.
 - Consequences: Reduced chance of formatting/review-fidelity drift on complex constructs; more operations route through UNO/comment fallback.
@@ -272,3 +272,21 @@
 - Consequences: Current review and manuscript workflows retain their existing
   semantics and safeguards. The deferred decision remains explicit rather than
   being inferred from line count or the absence of an in-repo consumer.
+
+## 2026-08-14 - ADR-041: Bind localized edit risk to the target window
+- Status: accepted
+- Context: A real manuscript pilot showed that paragraph-wide risky-markup
+  routing withheld ordinary text edits whenever unrelated fields, comments, or
+  special runs appeared elsewhere in the paragraph. This protected fidelity
+  but made safe line-edit throughput unnecessarily low.
+- Decision: Plan `replace_text_once` against the first review-visible match and
+  its exact OOXML text nodes. Permit a localized edit only when that target
+  window consists of compatible direct text runs and lies outside fields,
+  comment ranges, hyperlinks, content controls, existing revisions, and
+  special run markup. Preflight must simulate ordered OOXML operations with
+  the same planner and mutators as apply. Tracked OOXML edits must also enable
+  the document-level `w:trackRevisions` setting.
+- Consequences: Unrelated risky markup can remain byte-preserved while ordinary
+  text elsewhere in the paragraph is edited with character-minimal revisions.
+  Targets that intersect protected structures still fail closed and follow the
+  existing fallback policy. Paragraph rewrites retain paragraph-wide guards.

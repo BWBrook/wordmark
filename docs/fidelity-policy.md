@@ -59,7 +59,14 @@ Use case:
   - `detected_patterns`
   - `recommended_engine`
   - `recommended_strategy`
-- In strict mode, risky-markup paragraphs (for example hyperlinks, field codes, content controls, run-break/tab constructs) are treated as unsupported/high-risk and routed to fallback policy.
+- For `replace_text_once`, risk is bound to the first review-visible target
+  window. Unrelated risky markup elsewhere in the paragraph may remain
+  byte-preserved while a compatible direct-text target is edited. A target
+  that intersects hyperlinks, field codes, comment ranges, content controls,
+  existing revisions, or special run markup is unsupported/high-risk and is
+  routed to fallback policy. Paragraph rewrites retain paragraph-wide guards.
+- Successful tracked OOXML edits enable the document-level
+  `w:trackRevisions` setting so subsequent Word edits remain tracked.
 
 ## UNO fallback reliability policy
 - UNO output must remain auditable through `operation_results` diagnostics.

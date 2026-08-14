@@ -37,7 +37,14 @@ def test_hard_pattern_fixture_checksums_match() -> None:
         assert actual_hash == expected_hash
 
 
-@pytest.mark.parametrize("fixture_name,token", sorted(FIXTURE_TOKENS.items()))
+@pytest.mark.parametrize(
+    "fixture_name,token",
+    sorted(
+        (fixture_name, token)
+        for fixture_name, token in FIXTURE_TOKENS.items()
+        if fixture_name != "risk_field_code.docx"
+    ),
+)
 def test_preflight_flags_hard_patterns_as_unsupported_high_risk(fixture_name: str, token: str) -> None:
     path = FIXTURES_DIR / fixture_name
     report = ooxml_engine.preflight_patch(

@@ -22,6 +22,13 @@ def _write_docx(path: Path, text: str) -> Path:
     return path
 
 
+def _append_paragraphs(path: Path, *texts: str) -> None:
+    doc = Document(path)
+    for text in texts:
+        doc.add_paragraph(text)
+    doc.save(path)
+
+
 def _sha256_text(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -76,6 +83,7 @@ def test_manuscript_collect_ingests_notes_and_docx_feedback(tmp_path: Path) -> N
     baseline = round_dir / "rendered.docx"
     reviewed = tmp_path / "reviewed.docx"
     shutil.copy2(baseline, reviewed)
+    _append_paragraphs(reviewed, "Separate review target.")
 
     ooxml_engine.add_comment(
         reviewed,
@@ -87,7 +95,15 @@ def test_manuscript_collect_ingests_notes_and_docx_feedback(tmp_path: Path) -> N
     )
     ooxml_engine.apply_patch(
         reviewed,
-        patch_data={"operations": [{"type": "replace_text_once", "find": "Alpha", "replace": "Beta"}]},
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "review target",
+                    "replace": "reviewed target",
+                }
+            ]
+        },
         author="Barry Brook",
         track_changes=True,
         dry_run=False,
@@ -128,6 +144,12 @@ def test_manuscript_collect_ingests_notes_and_docx_feedback(tmp_path: Path) -> N
 def test_manuscript_collect_docx_import_reports_only_new_review_state(tmp_path: Path) -> None:
     _, _, round_dir = _prepare_round_with_docx(tmp_path, round_id="collect-docx-delta")
     baseline = round_dir / "rendered.docx"
+    _append_paragraphs(
+        baseline,
+        "Separate baseline target.",
+        "Separate new-comment paragraph.",
+        "Separate reviewed target.",
+    )
 
     ooxml_engine.add_comment(
         baseline,
@@ -139,7 +161,15 @@ def test_manuscript_collect_docx_import_reports_only_new_review_state(tmp_path: 
     )
     ooxml_engine.apply_patch(
         baseline,
-        patch_data={"operations": [{"type": "replace_text_once", "find": "Alpha", "replace": "Gamma"}]},
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "baseline target",
+                    "replace": "baseline revision",
+                }
+            ]
+        },
         author="Barry Brook",
         track_changes=True,
         dry_run=False,
@@ -149,7 +179,7 @@ def test_manuscript_collect_docx_import_reports_only_new_review_state(tmp_path: 
     shutil.copy2(baseline, reviewed)
     ooxml_engine.add_comment(
         reviewed,
-        selector="p:0",
+        selector="p:2",
         text="New reviewed comment.",
         author="Barry Brook",
         initials="BB",
@@ -157,7 +187,15 @@ def test_manuscript_collect_docx_import_reports_only_new_review_state(tmp_path: 
     )
     ooxml_engine.apply_patch(
         reviewed,
-        patch_data={"operations": [{"type": "replace_text_once", "find": "example", "replace": "sample"}]},
+        patch_data={
+            "operations": [
+                {
+                    "type": "replace_text_once",
+                    "find": "reviewed target",
+                    "replace": "reviewed revision",
+                }
+            ]
+        },
         author="Barry Brook",
         track_changes=True,
         dry_run=False,
