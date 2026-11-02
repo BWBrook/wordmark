@@ -1,5 +1,7 @@
 # wordmark
 
+> **Status:** developed in the open as a working record. This is work in progress: contents may change, and nothing here is peer-reviewed unless stated.
+
 Wordmark is a CLI-first toolkit for review workflows across `.docx` and Markdown/Quarto manuscripts, with Linux/WSL origins and active macOS support.
 
 ## Goals
@@ -235,3 +237,7 @@ uv run wordmark artifacts clean --older-than-days 7 --keep-transcripts --apply -
 - engine preference (`ooxml`, then `uno` fallback)
 - fidelity policy and fallback behavior (`strict|balanced|aggressive`, unsupported handling, UNO-fail handling)
 - verify profiles and gates (`business-docs`, `review-edit`)
+
+## Licence
+
+Code is released under the [MIT Licence](LICENSE). Text, figures and data created for this project are released under [CC BY-SA 4.0](LICENSE-CONTENT). Third-party material keeps its own terms where stated.
